@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+sqlalchemy
+chromadb
+langchain
+langchain-community
+langchain-chroma
+pypdf
+python-multipart
+requests
