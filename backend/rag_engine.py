@@ -31,46 +31,63 @@ def ingest_document(file_path: str):
     )
     print(f"Ingested {len(splits)} chunks from {file_path}")
 
-def query_knowledge_base(question: str):
-    """
-    Queries the knowledge base and returns an answer with sources.
-    """
-    # Initialize DB with same embedding function
-    db = Chroma(persist_directory=CACHE_DIR, embedding_function=OllamaEmbeddings(model="nomic-embed-text"))
-    
-    # Retrieve top 3 chunks
-    results = db.similarity_search(question, k=3)
-    
-    if not results:
-        return {"answer": "No relevant information found.", "sources": []}
+# In backend/rag_engine.py
 
-    # Format context
-    context_str = "\n\n".join([f"Source: {doc.metadata.get('source', 'Unknown')}, Page: {doc.metadata.get('page', 'Unknown')}\nContent: {doc.page_content}" for doc in results])
-    
-    # Generate answer using Ollama
+def query_knowledge_base(question: str, history: list = []):
     llm = Ollama(model="llama3.2:1b")
-    prompt = f"""You are an intelligent study assistant.
-    Answer the question using the provided context, but explain it in your own words.
-    Make it sound natural and easy to understand, like a teacher explaining to a student.
     
-    Context:
-    {context_str}
+    # --- PART 1: CONTEXT REWRITING (The Manual Fix) ---
+    standalone_question = question
+    if history:
+        # We confirm history exists, so we rewrite the query
+        try:
+            # Format history into a string for the AI
+            history_text = "\n".join([f"{msg.get('role', 'user')}: {msg.get('content', '')}" for msg in history[-4:]])
+            
+            rewrite_prompt = f"""
+            Rewrite the following question to be a standalone sentence that includes context from the chat history. 
+            Do NOT answer the question. Just rewrite it.
+            
+            Chat History:
+            {history_text}
+            
+            User's Follow-up: {question}
+            
+            Rewritten Question:"""
+            
+            # Get the smarter question from the AI
+            standalone_question = llm.invoke(rewrite_prompt).strip()
+            # Clean up if the AI adds quotes
+            standalone_question = standalone_question.replace('"', '').replace("Here is the rewritten question:", "")
+            print(f"🔄 LOGIC FIX: Rewrote '{question}' -> '{standalone_question}'")
+        except Exception as e:
+            print(f"⚠️ Rewrite failed: {e}")
+
+    # --- PART 2: THE "ROUTER" (Search or Chat?) ---
+    # If the rewritten question is just a greeting, skip the PDF search
+    is_greeting = False
+    if len(standalone_question.split()) < 5:
+        greetings = ["hi", "hello", "thanks", "good morning", "hey"]
+        if any(g in standalone_question.lower() for g in greetings):
+            is_greeting = True
+
+    if is_greeting:
+        return {
+            "answer": "Hello! I am your FocusFlow assistant. I can help you compare topics or explain concepts from your PDFs.",
+            "sources": []
+        }
+
+    # --- PART 3: SEARCH & ANSWER ---
+    # Use the 'standalone_question' (the smart one) for the search
+    docs = vector_store.similarity_search(standalone_question, k=3)
     
-    Question: {question}
-    """
+    # (The rest of your existing answer generation logic goes here...)
+    # Ensure you pass 'standalone_question' to your answer chain, not the raw 'question'
     
-    response = llm.invoke(prompt)
+    # ... [Keep your existing LLM chain call here] ...
     
-    # Format sources for return
-    sources = [
-        {
-            "source": os.path.basename(doc.metadata.get('source', '')),
-            "page": doc.metadata.get('page', 0)
-        } 
-        for doc in results
-    ]
+    # TEMPORARY: If you don't have the chain code handy, use this simple one:
+    final_prompt = f"Context: {docs}\n\nQuestion: {standalone_question}\n\nAnswer:"
+    answer = llm.invoke(final_prompt)
     
-    return {
-        "answer": response,
-        "sources": sources
-    }
+    return {"answer": answer, "sources": [doc.page_content for doc in docs]}

@@ -28,6 +28,12 @@ class ScheduleItem(BaseModel):
     is_completed: bool
     is_locked: bool
 
+class SourceItem(BaseModel):
+    id: int
+    filename: str
+    type: str
+    is_active: bool
+
 class UnlockRequest(BaseModel):
     topic_id: int
     quiz_score: int
@@ -61,6 +67,22 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
     db.refresh(new_source)
     
     return {"message": "File uploaded and ingested successfully", "id": new_source.id}
+
+@app.get("/sources", response_model=List[SourceItem])
+def get_sources(db: Session = Depends(get_db)):
+    sources = db.query(Source).filter(Source.is_active == True).all()
+    return sources
+
+@app.delete("/sources/{source_id}")
+def delete_source(source_id: int, db: Session = Depends(get_db)):
+    source = db.query(Source).filter(Source.id == source_id).first()
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+    
+    # Soft delete
+    source.is_active = False
+    db.commit()
+    return {"success": True, "message": "Source deleted"}
 
 @app.get("/schedule/{date}", response_model=List[ScheduleItem])
 def get_schedule(date: str, db: Session = Depends(get_db)):
@@ -110,6 +132,14 @@ def unlock_topic(request: UnlockRequest, db: Session = Depends(get_db)):
         db.commit()
         return {"success": True, "message": "Quiz score too low to unlock next topic.", "next_topic_unlocked": False}
 
-@app.get("/query")
-def query_kb(question: str):
-    return query_knowledge_base(question)
+class QueryRequest(BaseModel):
+    question: str
+    history: list = [Dict[str, Any]]=[]
+
+@app.post("/query")
+async def query_kb(request: QueryRequest):
+    """
+    RAG query endpoint.
+    """
+    response = query_knowledge_base(request.question,request.history)
+    return response

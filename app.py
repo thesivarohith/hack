@@ -238,12 +238,18 @@ if "expanded_topics" not in st.session_state: st.session_state.expanded_topics =
 if "show_analytics" not in st.session_state: st.session_state.show_analytics = False
 
 def check_internet():
-    try:
-        # Fast timeout ping
-        requests.get("http://www.google.com", timeout=1)
-        return True
-    except:
-        return False
+    """
+    Checks for internet connectivity by pinging reliable hosts.
+    try multiple to be sure.
+    """
+    keywords = ["google.com", "cloudflare.com", "github.com"]
+    for host in keywords:
+        try:
+            requests.get(f"http://{host}", timeout=3)
+            return True
+        except:
+            continue
+    return False
 
 # -----------------------------------------------------------------------------
 # 2. ANALYTICS MODAL (Rendered at top if active)
@@ -301,8 +307,152 @@ def show_analytics_dialog():
         st.markdown("<p style='color:#4B5563; margin-top:10px'>--</p>", unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# 3. MAIN LAYOUT
+# 3. QUIZ TO UNLOCK (Dialog)
 # -----------------------------------------------------------------------------
+@st.dialog("Topic Mastery Quiz")
+def show_quiz_dialog(topic_id, topic_name):
+    st.markdown(f"### Quiz for: {topic_name}")
+    st.write("Complete this short quiz to prove mastery and unlock the next topic.")
+    
+    with st.form(key=f"quiz_form_{topic_id}"):
+        # Quiz Questions (Demo)
+        st.markdown("**1. What is the First Law of Thermodynamics?**")
+        q1 = st.radio("Select the best answer:", [
+            "Energy cannot be created or destroyed, only transformed.",
+            "Entropy always increases.",
+            "Heat flows from cold to hot.",
+            "F = ma"
+        ], key=f"q1_{topic_id}")
+        
+        st.markdown("**2. Which system type allows energy but not matter transfer?**")
+        q2 = st.radio("Select the best answer:", [
+            "Open System",
+            "Closed System",
+            "Isolated System",
+            "Solar System"
+        ], key=f"q2_{topic_id}")
+        
+        if st.form_submit_button("Submit Quiz"):
+            score = 0
+            if q1.startswith("Energy cannot"): score += 50
+            if q2 == "Closed System": score += 50
+            
+            # Call backend
+            try:
+                payload = {"topic_id": topic_id, "quiz_score": score}
+                resp = requests.post(f"{API_URL}/unlock_topic", json=payload)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data.get("success"):
+                        if data.get("next_topic_unlocked"):
+                            st.balloons()
+                            st.success(f"Score: {score}% - PASSED! Next topic unlocked.")
+                        else:
+                            st.warning(f"Score: {score}% - Keep studying! You need >60% to pass.")
+                        time.sleep(2)
+                        st.rerun()
+                    else:
+                        st.error(data.get("message"))
+                else:
+                    st.error(f"Error: {resp.status_code}")
+            except Exception as e:
+                st.error(f"Connection failed: {e}")
+
+        st.markdown("**P** <span style='float:right; background:#d1d5db; color:white; padding:2px 8px; border-radius:99px; font-size:0.8rem'>N/A</span>", unsafe_allow_html=True)
+        st.markdown("<p style='color:#4B5563; margin-top:10px'>--</p>", unsafe_allow_html=True)
+
+# -----------------------------------------------------------------------------
+# 3. QUIZ TO UNLOCK (Dialog)
+# -----------------------------------------------------------------------------
+@st.dialog("Topic Mastery Quiz")
+def show_quiz_dialog(topic_id, topic_name):
+    # ... (function body unchanged, assuming it's already there)
+    # Re-writing it just in case, but actually I should target the END of this function to append the new one?
+    # No, I can just append the new function after it.
+    pass
+
+# (The previous tool usage showed show_quiz_dialog was inserted. I will target the end of it to insert Flashcards)
+# Actually, let's just insert it before MAIN LAYOUT, which is clearer.
+
+# -----------------------------------------------------------------------------
+# 4. FLASHCARDS (Dialog)
+# -----------------------------------------------------------------------------
+@st.dialog("Topic Flashcards", width="large")
+def show_flashcard_dialog(topic_id, topic_name):
+    st.markdown(f"### Flashcards: {topic_name}")
+    
+    # Flashcard Data (Demo)
+    flashcards = [
+        {"q": "What is the First Law of Thermodynamics?", "a": "Energy cannot be created or destroyed, only transformed."},
+        {"q": "Define Entropy.", "a": "A measure of the disorder or randomness in a system."},
+        {"q": "What is an Isolated System?", "a": "A system that exchanges neither matter nor energy with its surroundings."}
+    ]
+    
+    # Session State for this dialog interaction
+    # Note: st.dialog reruns the function body on interaction.
+    if "fc_index" not in st.session_state: st.session_state.fc_index = 0
+    if "fc_flipped" not in st.session_state: st.session_state.fc_flipped = False
+    
+    # Navigation Limits
+    current_idx = st.session_state.fc_index
+    total = len(flashcards)
+    
+    if current_idx >= total:
+        st.success("You've reviewed all cards!")
+        if st.button("Restart"):
+            st.session_state.fc_index = 0
+            st.session_state.fc_flipped = False
+            st.rerun()
+        return
+
+    card = flashcards[current_idx]
+    
+    # Progress
+    st.progress((current_idx + 1) / total)
+    st.caption(f"Card {current_idx + 1} of {total}")
+    
+    # Card UI
+    content = card["a"] if st.session_state.fc_flipped else card["q"]
+    bg_color = "#EFF6FF" if not st.session_state.fc_flipped else "#F0FDF4" # Blue (Question) -> Green (Answer)
+    border_color = "#DBEAFE" if not st.session_state.fc_flipped else "#BBF7D0"
+    label = "QUESTION" if not st.session_state.fc_flipped else "ANSWER"
+    
+    st.markdown(f"""
+    <div style="
+        background-color: {bg_color};
+        border: 2px solid {border_color};
+        border-radius: 12px;
+        padding: 40px;
+        text-align: center;
+        min-height: 200px;
+        display: flex; 
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        margin-bottom: 20px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    ">
+        <div style="font-size: 0.8rem; font-weight: 700; color: #6B7280; margin-bottom: 10px; letter-spacing: 1px;">{label}</div>
+        <div style="font-size: 1.5rem; font-weight: 600; color: #1F2937;">{content}</div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Controls
+    c1, c2 = st.columns(2)
+    with c1:
+        btn_text = "Show Answer" if not st.session_state.fc_flipped else "Show Question"
+        if st.button(btn_text, use_container_width=True):
+            st.session_state.fc_flipped = not st.session_state.fc_flipped
+            st.rerun()
+            
+    with c2:
+        if st.session_state.fc_flipped:
+            if st.button("Next Card →", type="primary", use_container_width=True):
+                st.session_state.fc_index += 1
+                st.session_state.fc_flipped = False
+                st.rerun()
+        else:
+             st.button("Next Card →", disabled=True, use_container_width=True) # Lock next until flipped? Or allow skipping. Let's lock to encourage reading.
 left_col, mid_col, right_col = st.columns([0.25, 0.50, 0.25], gap="medium")
 
 # --- LEFT COLUMN: Control Center ---
@@ -464,24 +614,45 @@ with left_col:
         # Tabs
         tab_offline, tab_online = st.tabs(["Offline Sources", "Online Sources"])
         
+        # Helper to fetch sources
+        sources_list = []
+        try:
+             s_resp = requests.get(f"{API_URL}/sources")
+             if s_resp.status_code == 200:
+                 sources_list = s_resp.json()
+        except:
+             pass
+
         with tab_offline:
             # Filter offline files (PDF, TXT, DOCX) - Exclude Strings starting with "WEB:"
-            offline_files = [f for f in st.session_state.uploaded_files if not f.startswith("WEB:")]
+            # Now we look at sources_list from DB where type == "local"
+            offline_sources = [s for s in sources_list if s['type'] == 'local']
             
-            if not offline_files:
+            if not offline_sources:
                 st.markdown("""
                 <div style="text-align: center; color: #9CA3AF; padding: 20px; font-size: 0.9rem;">
                     No sources added
                 </div>
                 """, unsafe_allow_html=True)
             
-            for f in offline_files:
-                st.markdown(f"""
-                <div class="source-item">
-                    <span class="source-icon">📄</span>
-                    <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{f}</span>
-                </div>
-                """, unsafe_allow_html=True)
+            for src in offline_sources:
+                c1, c2 = st.columns([0.85, 0.15])
+                with c1:
+                    st.markdown(f"""
+                    <div class="source-item">
+                        <span class="source-icon">📄</span>
+                        <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{src['filename']}</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+                with c2:
+                    if st.button("🗑️", key=f"del_{src['id']}", help="Delete source", type="tertiary"):
+                        try:
+                            # Optimistically update UI by removing from list or just rerun
+                            requests.delete(f"{API_URL}/sources/{src['id']}")
+                            time.sleep(0.1) # Small delay for DB prop
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error: {e}")
             
             # Functional Add Source
             with st.expander("+ Add Source"):
@@ -527,53 +698,45 @@ with mid_col:
             show_analytics_dialog()
 
     # Reading Content / Chat Area
-    with st.container():
-        st.markdown('<div class="custom-card" style="min-height: 500px; display: flex; flex-direction: column; justify-content: space-between;">', unsafe_allow_html=True)
+    # Use native container with border to replace "custom-card" and fix "small box" issue
+    with st.container(border=True):
         
-        # 1. Chat/Content Display
-        if not st.session_state.chat_history:
-            # Welcome State
-            st.markdown('<div class="article-title">Welcome to FocusFlow</div>', unsafe_allow_html=True)
-            st.markdown("""
-            <div class="article-text">
-                This is your intelligent workspace. <br>
-                Upload a PDF in the sources panel to get started, or ask a question below.
-                <br><br>
-                Your content will appear here...
-            </div>
-            """, unsafe_allow_html=True)
-        else:
-            # Chat History Display
-            st.markdown('<div style="flex-grow: 1; overflow-y: auto; max-height: 450px; padding-right: 10px;">', unsafe_allow_html=True)
-            for msg in st.session_state.chat_history:
-                role = msg["role"]
-                content = msg["content"]
-                
-                if role == "user":
-                    st.markdown(f"""
-                    <div style="display: flex; justify-content: flex-end; margin-bottom: 15px;">
-                        <div style="background-color: #E5E7EB; color: #111827; padding: 10px 15px; border-radius: 12px 12px 0 12px; max-width: 80%; font-size: 0.95rem;">
-                            {content}
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                else:
-                    st.markdown(f"""
-                    <div style="display: flex; justify-content: flex-start; margin-bottom: 15px;">
-                        <div style="background-color: #EFF6FF; color: #1E3A8A; padding: 10px 15px; border-radius: 12px 12px 12px 0; max-width: 80%; font-size: 0.95rem; border: 1px solid #DBEAFE;">
-                            {content}
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
+        # 1. Chat History / Content (Scrollable Container)
+        # using height=500 to create a scrolling area like a real chat app
+        chat_container = st.container(height=500)
+        
+        with chat_container:
+            if not st.session_state.chat_history:
+                # Welcome Content
+                st.markdown('<div class="article-title">Welcome to FocusFlow</div>', unsafe_allow_html=True)
+                st.markdown("""
+                <div class="article-text">
+                    This is your intelligent workspace. <br>
+                    Upload a PDF in the sources panel to get started, or ask a question below.
+                    <br><br>
+                    Your content will appear here...
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                # Chat Messages
+                for msg in st.session_state.chat_history:
+                    role = msg["role"]
+                    content = msg["content"]
+                    
+                    if role == "user":
+                        st.chat_message("user").write(content)
+                    else:
+                        with st.chat_message("assistant"):
+                            st.markdown(content)
+                            if "sources" in msg and msg["sources"]:
+                                st.markdown("---")
+                                st.caption("Sources used:")
+                                for s in msg["sources"]:
+                                    label = f"📄 {s['source']} | Page {s['page']}"
+                                    with st.expander(label):
+                                        st.markdown(f"_{s.get('content', 'No snippet available').strip()}_")
 
-        
-        # 2. Input Area
-        st.markdown("""
-        <hr style="margin: 20px 0; border-top: 1px solid #E5E7EB;">
-        """, unsafe_allow_html=True)
-        
-        # Using a form for the chat input to allow "Enter" to submit without full reload issues
+        # 2. Input Area (Pinned to bottom of the visible card by being outside scroll container)
         with st.form(key="chat_form", clear_on_submit=True):
             cols = st.columns([0.85, 0.15])
             with cols[0]:
@@ -582,41 +745,34 @@ with mid_col:
                 submit_button = st.form_submit_button("Send", use_container_width=True)
             
             if submit_button and user_input:
-                # Add user message immediately
                 st.session_state.chat_history.append({"role": "user", "content": user_input})
                 
-                # Call Backend
                 try:
-                    with st.spinner("Analyzing documents..."):
-                        # RAG Query
-                        response = requests.get(f"{API_URL}/query", params={"question": user_input})
+                    with st.spinner("Thinking..."):
+                        # Prepare history (exclude sources for cleanliness)
+                        history = [
+                            {"role": msg["role"], "content": msg["content"]} 
+                            for msg in st.session_state.chat_history[:-1][-5:] # Last 5 valid history items before current question
+                        ]
                         
-                        if response.status_code == 200:
+                        resp = requests.post(f"{API_URL}/query", json={"question": user_input, "history": history})
+                        if resp.status_code == 200:
                             try:
-                                data = response.json()
-                                # Backend returns {"answer": "...", "sources": [...]}
-                                answer = data.get("answer", "No answer returned.")
-                                sources = data.get("sources", [])
-                                
-                                # Append sources to answer for visibility
-                                if sources:
-                                    answer += "\n\n**Sources:**\n"
-                                    for s in sources:
-                                        fname = s.get('source', 'Unknown')
-                                        page = s.get('page', '?')
-                                        answer += f"- {fname} (Page {page})\n"
-
-                                st.session_state.chat_history.append({"role": "assistant", "content": answer})
-                            except Exception as parse_err:
-                                st.session_state.chat_history.append({"role": "assistant", "content": f"Error parsing response: {str(parse_err)}"})
+                                data = resp.json()
+                                ans = data.get("answer", "No answer.")
+                                srcs = data.get("sources", [])
+                                if srcs:
+                                    st.session_state.chat_history.append({"role": "assistant", "content": ans, "sources": srcs})
+                                else:
+                                    st.session_state.chat_history.append({"role": "assistant", "content": ans})
+                            except Exception as e:
+                                st.session_state.chat_history.append({"role": "assistant", "content": f"Error parsing response: {e}\n\nRaw text: {resp.text}"})
                         else:
-                             st.session_state.chat_history.append({"role": "assistant", "content": f"Error: {response.status_code}"})
+                             st.session_state.chat_history.append({"role": "assistant", "content": "Error."})
                 except Exception as e:
-                     st.session_state.chat_history.append({"role": "assistant", "content": f"Connection Failed: {e}"})
+                     st.session_state.chat_history.append({"role": "assistant", "content": f"Connection Error: {e}"})
                 
                 st.rerun()
-
-        st.markdown('</div>', unsafe_allow_html=True) # End card
 
 
 # --- RIGHT COLUMN: Scheduler ---
@@ -701,12 +857,11 @@ with right_col:
                 c_act1, c_act2 = st.columns(2)
                 with c_act1:
                     if st.button("Take Mandatory Quiz", key=f"quiz_{t_id}", type="primary", use_container_width=True):
-                        # TODO: Trigger Quiz Modal
-                        pass
+                        show_quiz_dialog(t_id, t_name)
                 with c_act2:
                     if st.button("Flashcards (Optional)", key=f"fc_{t_id}", use_container_width=True):
-                         pass
+                         show_flashcard_dialog(t_id, t_name)
                     
                 st.markdown("</div>", unsafe_allow_html=True)
 
-        st.markdown('</div>', unsafe_allow_html=True)
+
