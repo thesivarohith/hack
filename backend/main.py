@@ -67,7 +67,27 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
     db.refresh(new_source)
     
     return {"message": "File uploaded and ingested successfully", "id": new_source.id}
+    return {"message": "File uploaded and ingested successfully", "id": new_source.id}
 
+class UrlRequest(BaseModel):
+    url: str
+
+@app.post("/ingest_url")
+def ingest_url_endpoint(request: UrlRequest, db: Session = Depends(get_db)):
+    try:
+        from backend.rag_engine import ingest_url
+        title = ingest_url(request.url)
+        
+        # Save to DB
+        # We use the title as the filename for display purposes
+        new_source = Source(filename=title, type="url", file_path=request.url, is_active=True)
+        db.add(new_source)
+        db.commit()
+        db.refresh(new_source)
+        
+        return {"message": f"Successfully added: {title}", "id": new_source.id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 @app.get("/sources", response_model=List[SourceItem])
 def get_sources(db: Session = Depends(get_db)):
     sources = db.query(Source).filter(Source.is_active == True).all()
@@ -80,6 +100,12 @@ def delete_source(source_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Source not found")
     
     # Soft delete
+    try:
+        from backend.rag_engine import delete_document
+        delete_document(source.file_path)
+    except Exception as e:
+        print(f"Failed to delete from vector store: {e}")
+
     source.is_active = False
     db.commit()
     return {"success": True, "message": "Source deleted"}
@@ -127,14 +153,26 @@ def unlock_topic(request: UnlockRequest, db: Session = Depends(get_db)):
             next_unlocked = True
             
         db.commit()
-        return {"success": True, "message": "Quiz passed. Next topic unlocked.", "next_topic_unlocked": next_unlocked}
+        return {"success": True, "message": "Quiz Passed! Next topic unlocked.", "next_topic_unlocked": next_unlocked}
     else:
         db.commit()
-        return {"success": True, "message": "Quiz score too low to unlock next topic.", "next_topic_unlocked": False}
+        return {"success": False, "message": "Score too low. Try again!", "next_topic_unlocked": False}
+
+class PlanRequest(BaseModel):
+    request_text: str
+
+@app.post("/generate_plan")
+def generate_plan_endpoint(request: PlanRequest):
+    try:
+        from backend.rag_engine import generate_study_plan
+        plan = generate_study_plan(request.request_text)
+        return plan
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 class QueryRequest(BaseModel):
     question: str
-    history: list = [Dict[str, Any]]=[]
+    history: List[dict] = []
 
 @app.post("/query")
 async def query_kb(request: QueryRequest):
