@@ -248,6 +248,7 @@ if "chat_history" not in st.session_state: st.session_state.chat_history = []
 if "mastery_data" not in st.session_state: st.session_state.mastery_data = {"S1": 0, "S2": 0, "S3": 0, "S4": 0}
 if "expanded_topics" not in st.session_state: st.session_state.expanded_topics = set()
 if "show_analytics" not in st.session_state: st.session_state.show_analytics = False
+if "topic_scores" not in st.session_state: st.session_state.topic_scores = {}  # Track quiz performance by topic_id
 
 # Focus Mode State
 if "focus_mode" not in st.session_state: st.session_state.focus_mode = False
@@ -298,40 +299,155 @@ if st.session_state.show_analytics:
         # If st.dialog is available (it was in the previous app.py), we should use it.
         pass
 
-@st.dialog("Analytics Overview", width="large")
+def extract_subjects_and_topics():
+    """
+    Extract subjects from study plan topics.
+    Returns: {subject_name: [topic_data_with_scores]}
+    """
+    import re
+    subjects = {}
+    for topic in st.session_state.study_plan:
+        title = topic.get("title", "")
+        
+        # Remove "Day X:" prefix if present
+        title_cleaned = re.sub(r'^Day\s+\d+:\s*', '', title)
+        
+        # Try to extract subject from remaining text
+        # Look for patterns like "OOPS:" or "Manufacturing:" or just use first few words
+        if ":" in title_cleaned:
+            # Get first part before colon as subject
+            subject = title_cleaned.split(":")[0].strip()
+        elif " - " in title_cleaned:
+            # Alternative separator
+            subject = title_cleaned.split(" - ")[0].strip()
+        else:
+            # Use first 2-3 capitalized words as subject
+            words = title_cleaned.split()
+            # Take first 1-2 capitalized words as subject name
+            subject_words = []
+            for word in words[:3]:
+                if word[0].isupper() or word.isupper():
+                    subject_words.append(word)
+                else:
+                    break
+            subject = " ".join(subject_words) if subject_words else "General"
+        
+        # Clean up subject name
+        subject = subject.strip()
+        if not subject or subject.startswith("Day"):
+            subject = "General"
+        
+        if subject not in subjects:
+            subjects[subject] = []
+        
+        # Add topic with its score data
+        topic_data = {
+            "title": title,
+            "id": topic.get("id"),
+            "status": topic.get("status", "locked"),
+            "quiz_passed": topic.get("quiz_passed", False)
+        }
+        
+        # Add score if available
+        if topic.get("id") in st.session_state.topic_scores:
+            topic_data["score_data"] = st.session_state.topic_scores[topic.get("id")]
+        
+        subjects[subject].append(topic_data)
+    
+    return subjects
+
+
+@st.dialog("📊 Analytics Overview", width="large")
 def show_analytics_dialog():
-    # Header Tabs
-    st.markdown("""
-    <div style="display: flex; gap: 10px; margin-bottom: 30px; background: #F3F4F6; padding: 5px; border-radius: 8px;">
-        <button style="flex: 1; padding: 8px; border-radius: 6px; border: none; background: #3B82F6; color: white; font-weight: 600;">S1</button>
-        <button style="flex: 1; padding: 8px; border-radius: 6px; border: none; background: transparent; color: #6B7280; font-weight: 600;">S2</button>
-        <button style="flex: 1; padding: 8px; border-radius: 6px; border: none; background: transparent; color: #6B7280; font-weight: 600;">S3</button>
-        <button style="flex: 1; padding: 8px; border-radius: 6px; border: none; background: transparent; color: #6B7280; font-weight: 600;">S4</button>
-    </div>
-    """, unsafe_allow_html=True)
+    subjects_data = extract_subjects_and_topics()
     
-    # Hero Score
-    st.markdown("""
-    <div style="text-align: center; margin-bottom: 40px;">
-        <h1 style="font-size: 5rem; color: #111827; margin: 0;">67%</h1>
-        <p style="color: #6B7280; font-size: 1.2rem;">Overall Mastery</p>
-    </div>
-    """, unsafe_allow_html=True)
+    if not subjects_data:
+        st.info("📚 No subjects found. Create a study plan to see analytics.")
+        return
     
-    # Columns
-    c1, c2, c3 = st.columns(3)
+    # Create dynamic tabs
+    subject_names = list(subjects_data.keys())
+    tabs = st.tabs(subject_names)
     
-    with c1:
-        st.markdown("**G** <span style='float:right; background:#d1d5db; color:white; padding:2px 8px; border-radius:99px; font-size:0.8rem'>N/A</span>", unsafe_allow_html=True)
-        st.markdown("<p style='color:#4B5563; margin-top:10px'>--</p>", unsafe_allow_html=True)
+    for idx, subject_name in enumerate(subject_names):
+        with tabs[idx]:
+            topics = subjects_data[subject_name]
+            
+            # Calculate subject mastery
+            completed_topics = [t for t in topics if t.get("status") == "completed"]
+            total_topics = len(topics)
+            completion_pct = (len(completed_topics) / total_topics * 100) if total_topics > 0 else 0
+            
+            # Calculate average score for topics with quiz data
+            topics_with_scores = [t for t in topics if "score_data" in t]
+            if topics_with_scores:
+                avg_score = sum(t["score_data"]["percentage"] for t in topics_with_scores) / len(topics_with_scores)
+            else:
+                avg_score = 0
+            
+            # Display mastery header
+            st.markdown(f"""
+            <div style="text-align: center; margin-bottom: 30px;">
+                <h1 style="font-size: 4rem; color: #111827; margin: 0;">{avg_score:.1f}%</h1>
+                <p style="color: #6B7280; font-size: 1.2rem;">Overall Mastery</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Progress metrics
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Topics Completed", f"{len(completed_topics)}/{total_topics}")
+                st.progress(completion_pct / 100)
+            
+            with col2:
+                st.metric("Quizzes Taken", f"{len(topics_with_scores)}/{total_topics}")
+                quiz_completion = (len(topics_with_scores) / total_topics * 100) if total_topics > 0 else 0
+                st.progress(quiz_completion / 100)
+            
+            st.markdown("---")
+            st.markdown("### 📈 Performance Breakdown")
+            
+            # Classify topics by performance
+            strong = [t for t in topics_with_scores if t["score_data"]["percentage"] >= 75]
+            moderate = [t for t in topics_with_scores if 50 <= t["score_data"]["percentage"] < 75]
+            needs_work = [t for t in topics_with_scores if t["score_data"]["percentage"] < 50]
+            
+            # Display classifications
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.markdown("#### 💚 Strong Topics")
+                st.caption(f"{len(strong)} topic(s)")
+                if strong:
+                    for t in strong:
+                        score_pct = t["score_data"]["percentage"]
+                        score_str = f"{t['score_data']['score']}/{t['score_data']['total']}"
+                        st.success(f"**{t['title']}**\n{score_pct:.0f}% ({score_str})")
+                else:
+                    st.info("No strong topics yet. Keep studying!")
+            
+            with col2:
+                st.markdown("#### 🟡 Moderate Topics")
+                st.caption(f"{len(moderate)} topic(s)")
+                if moderate:
+                    for t in moderate:
+                        score_pct = t["score_data"]["percentage"]
+                        score_str = f"{t['score_data']['score']}/{t['score_data']['total']}"
+                        st.warning(f"**{t['title']}**\n{score_pct:.0f}% ({score_str})")
+                else:
+                    st.info("No moderate topics yet")
+            
+            with col3:
+                st.markdown("#### 🔴 Needs Work")
+                st.caption(f"{len(needs_work)} topic(s)")
+                if needs_work:
+                    for t in needs_work:
+                        score_pct = t["score_data"]["percentage"]
+                        score_str = f"{t['score_data']['score']}/{t['score_data']['total']}"
+                        st.error(f"**{t['title']}**\n{score_pct:.0f}% ({score_str})")
+                else:
+                    st.info("Great! No topics need extra work")
 
-    with c2:
-        st.markdown("**M** <span style='float:right; background:#d1d5db; color:white; padding:2px 8px; border-radius:99px; font-size:0.8rem'>N/A</span>", unsafe_allow_html=True)
-        st.markdown("<p style='color:#4B5563; margin-top:10px'>--</p>", unsafe_allow_html=True)
-
-    with c3:
-        st.markdown("**P** <span style='float:right; background:#d1d5db; color:white; padding:2px 8px; border-radius:99px; font-size:0.8rem'>N/A</span>", unsafe_allow_html=True)
-        st.markdown("<p style='color:#4B5563; margin-top:10px'>--</p>", unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
 # 3. QUIZ TO UNLOCK (Dialog)
@@ -655,6 +771,7 @@ if not st.session_state.focus_mode:
                         st.session_state.expiry_time = time.time() + total_seconds
                         st.rerun()
                 
+
         # Sources Widget
         with st.container(border=True):
             # Connectivity Check
@@ -765,55 +882,73 @@ if st.session_state.focus_mode:
     # FOCUS: LEFT COLUMN (CHAT)
     with left_col:
         st.markdown("### 💬 Study Assistant")
-        # Reuse existing chat logic or a simplified version
-        messages = st.container(height=600)
+        
+        # Fixed-height chat container to keep messages inside
+        messages = st.container(height=600, border=True)
         with messages:
             for msg in st.session_state.chat_history:
                  with st.chat_message(msg["role"]):
                      st.write(msg["content"])
         
-        # New Chat Input
+        # Chat input at bottom - messages will appear in container above
         if prompt := st.chat_input(f"Ask about {st.session_state.active_topic}..."):
              st.session_state.chat_history.append({"role": "user", "content": prompt})
-             with st.chat_message("user"):
-                 st.write(prompt)
              
              # Call AI
-             with st.chat_message("assistant"):
-                 with st.spinner("Thinking..."):
-                     try:
-                         # Prepare history
-                         history = [{"role": m["role"], "content": m["content"]} for m in st.session_state.chat_history[:-1][-5:]]
-                         resp = requests.post(f"{API_URL}/query", json={"question": prompt, "history": history})
-                         if resp.status_code == 200:
-                             data = resp.json()
-                             ans = data.get("answer", "No answer.")
-                             st.write(ans)
-                             st.session_state.chat_history.append({"role": "assistant", "content": ans})
-                         else:
-                             st.error("Error.")
-                     except Exception as e:
-                         st.error(f"Connection Error: {e}")
-
-    # FOCUS: RIGHT COLUMN (CONTENT) - (Technically mid_col in layout)
-    with mid_col: 
-        st.markdown(f"## 📖 {st.session_state.active_topic}")
-        st.info("Here is the learning material for this topic.")
-        
-        # Placeholder Content
-        st.markdown("""
-        ### Key Concepts
-        - **Concept 1:** Definition and importance.
-        - **Concept 2:** Real-world application.
-        - **Concept 3:** Detailed analysis.
-        """)
-        
-        # Exit Button
-        st.markdown("---")
-        if st.button("⬅️ Exit Focus Mode", use_container_width=True):
-             st.session_state.focus_mode = False
-             st.session_state.active_topic = None
+             with st.spinner("Thinking..."):
+                 try:
+                     # Prepare history
+                     history = [{"role": m["role"], "content": m["content"]} for m in st.session_state.chat_history[:-1][-5:]]
+                     resp = requests.post(f"{API_URL}/query", json={"question": prompt, "history": history})
+                     if resp.status_code == 200:
+                         data = resp.json()
+                         ans = data.get("answer", "No answer.")
+                         st.session_state.chat_history.append({"role": "assistant", "content": ans})
+                     else:
+                         st.session_state.chat_history.append({"role": "assistant", "content": "Error processing request."})
+                 except Exception as e:
+                     st.session_state.chat_history.append({"role": "assistant", "content": f"Connection Error: {e}"})
+             
              st.rerun()
+
+    # FOCUS: RIGHT COLUMN (LESSON CONTENT) - Scrollable Document Viewer
+    with mid_col: 
+        topic_title = st.session_state.active_topic
+        # Handle case where active_topic is dict or string
+        if isinstance(topic_title, dict):
+             topic_title = topic_title.get('title', 'Unknown Topic')
+             
+        st.markdown(f"### 📖 {topic_title}")
+        st.markdown("---")
+        
+        # Unique key for this topic's content
+        t_id = st.session_state.active_topic['id'] if isinstance(st.session_state.active_topic, dict) else hash(topic_title)
+        content_key = f"content_{t_id}"
+        
+        # 1. Fetch Content if missing
+        if content_key not in st.session_state:
+            with st.spinner(f"🤖 AI is writing a lesson for '{topic_title}'..."):
+                try:
+                    resp = requests.post(f"{API_URL}/generate_lesson", json={"topic": topic_title}, timeout=300)
+                    
+                    if resp.status_code == 200:
+                        st.session_state[content_key] = resp.json()["content"]
+                    else:
+                        st.session_state[content_key] = f"⚠️ Server Error: {resp.text}"
+                        
+                except Exception as e:
+                    st.session_state[content_key] = f"⚠️ Connection Error: {e}"
+
+        # 2. Render Content in Scrollable Container (like a document viewer)
+        lesson_container = st.container(height=650, border=True)
+        with lesson_container:
+            st.markdown(st.session_state[content_key])
+        
+        # 3. Exit Button (stays fixed below the scrollable content)
+        if st.button("⬅ Finish & Return", use_container_width=True):
+             st.session_state.focus_mode = False
+             st.rerun()
+
 
 
 # --- MIDDLE COLUMN: Intelligent Workspace ---
@@ -912,44 +1047,29 @@ if not st.session_state.focus_mode:
 # --- RIGHT COLUMN: Scheduler ---
 if right_col:
     with right_col:
-        # Scheduler Header Removed to save space
-        # st.markdown("### Scheduler")
-        
-        # Calendar Agent
-        # Calendar Agent (Minimalist)
-        # Removing st.container() wrapper to reduce vertical gap/white block
-        
-        # Calculate Start Date: 1st of Previous Month
+        # --- CALENDAR WIDGET ---
         today = date.today()
-        # Logic to go back 1 month
-        last_month_year = today.year if today.month > 1 else today.year - 1
-        last_month = today.month - 1 if today.month > 1 else 12
-        start_date_str = f"{last_month_year}-{last_month:02d}-01"
+        selected_date = st.date_input("📅 Calendar", value=today)
 
-        calendar_options = {
-            # User requested arrows "on both sides"
-            "headerToolbar": {"left": "prev", "center": "title", "right": "next"},
+        # --- LOGIC: POPUP FOR OTHER DATES ---
+        # If user selects a future date, show its plan in a dialog
+        if selected_date != today:
+            @st.dialog(f"Plan for {selected_date}")
+            def show_future_plan():
+                delta = selected_date - today
+                day_offset = delta.days + 1
+                # Filter plan for this hypothetical day
+                day_tasks = [t for t in st.session_state.study_plan if t.get("day") == day_offset]
+                
+                if day_tasks:
+                    for t in day_tasks:
+                        st.markdown(f"- **{t['title']}**")
+                else:
+                    st.info("No plan generated for this specific date yet.")
             
-            "initialView": "multiMonthYear",
-            "initialDate": start_date_str, 
-            "views": {
-                "multiMonthYear": {
-                    "type": "multiMonthYear",
-                    "duration": {"months": 3},
-                    "multiMonthMaxColumns": 3,
-                    # FIXED: 280px ensures text is readable. 100px was too small!
-                    # This will force the container to scroll horizontally.
-                    "multiMonthMinWidth": 280, 
-                }
-            },
-            # JS Option to format title shorter (e.g. "Dec 2025 - Feb 2026")
-            "titleFormat": {"year": "numeric", "month": "short"}, 
-            # "contentHeight": "auto",
-        }
-        
-        calendar(events=[], options=calendar_options, key="mini_cal")
-        
-        # --- B. TALK TO CALENDAR (Fixed: No Loop) ---
+            show_future_plan()
+
+        # --- B. TALK TO CALENDAR ---
         with st.form("calendar_chat_form", clear_on_submit=True):
             plan_query = st.text_input("Talk to Calendar...", placeholder="e.g., 'Make a 3 day plan'")
             submitted = st.form_submit_button("🚀 Generate Plan")
@@ -966,13 +1086,19 @@ if right_col:
                             
                             # ROBUST SANITIZATION LOOP
                             for index, task in enumerate(raw_plan):
-                                # 1. Fix Missing ID (Use index + 1 if missing)
-                                if "id" not in task:
-                                    task["id"] = index + 1
-                                
-                                # 2. Fix Missing Keys
+                                # 1. FORCE UNLOCK DAY 1 (The Fix)
+                                if index == 0:
+                                    task["status"] = "unlocked"
+                                    task["locked"] = False
+                                else:
+                                    # Default logic for others: Trust 'status' or default to 'locked'
+                                    # We ignore the 'locked' boolean fallback to be stricter, 
+                                    # ensuring only Day 1 is open initially if not specified.
+                                    task["status"] = task.get("status", "locked")
+                                    
+                                # 2. Fix IDs & Keys
+                                if "id" not in task: task["id"] = index + 1
                                 task["quiz_passed"] = task.get("quiz_passed", False)
-                                task["status"] = task.get("status", "locked" if task.get("locked", True) else "unlocked")
                                 task["title"] = task.get("topic", f"Topic {task['id']}") # Fallback title
                             
                             st.session_state.study_plan = raw_plan
@@ -982,63 +1108,148 @@ if right_col:
                             st.error(f"Failed: {resp.text}")
                     except Exception as e:
                         st.error(f"Error: {e}")
-        # NO SPACER here
 
-        # Removed spacer to satisfy "remove white box" request
-        # st.markdown("<br>", unsafe_allow_html=True) # Spacer
-
-        # Today's Topics (Gamified)
-        # Merging the opening DIV and the Header into ONE markdown call to ensure they render together.
-        st.markdown("""
-            <div class="custom-card">
-            <div style="display:flex; justify-content:space-between; align-items:center;"><h4>Today's Topics</h4></div>
-        """, unsafe_allow_html=True)
+        # --- TODAY'S TOPICS (FILTERED) ---
+        st.markdown("### Today's Topics")
         
-        if not st.session_state.study_plan:
-            # EMPTY STATE
-            st.info("Tell the calendar to make a plan 📅")
+        # FILTER: Only show Day 1 tasks for "Today"
+        todays_tasks = [t for t in st.session_state.study_plan if t.get("day") == 1]
+
+        if not todays_tasks:
+            st.caption("No tasks for today. Ask the calendar to make a plan!")
         else:
-            # Render Plan
-            st.markdown(f'<span style="font-size:0.8rem; color:#6B7280">{len([t for t in st.session_state.study_plan if t["quiz_passed"]])}/{len(st.session_state.study_plan)} Done</span>', unsafe_allow_html=True)
-            st.markdown("<br>", unsafe_allow_html=True)
+            # Group tasks by subject if multiple topics per day
+            if len(todays_tasks) > 1:
+                st.caption(f"📚 {len(todays_tasks)} topics to cover today")
+
+        for i, task in enumerate(todays_tasks):
+            # Display subject badge if available
+            subject_badge = ""
+            if "subject" in task and task["subject"]:
+                subject_badge = f"**{task['subject']}** • "
             
-            # Iterate through Mock Plan
-            for i, topic in enumerate(st.session_state.study_plan):
-                t_id = topic["id"]
-                title = topic["title"]
-                status = topic["status"]
-                passed = topic["quiz_passed"]
-                
-                # Styles
-                opacity = "1.0" if status == "unlocked" else "0.5"
-                icon = "🔒" if status == "locked" else ("✅" if passed else "🟦")
-                
-                # Card Container
-                with st.container():
-                    c1, c2 = st.columns([0.15, 0.85])
-                    with c1:
-                        st.markdown(f"<div style='font-size:1.5rem; opacity:{opacity}'>{icon}</div>", unsafe_allow_html=True)
-                    with c2:
-                        # Title
-                        st.markdown(f"<div style='font-weight:600; opacity:{opacity}'>{title}</div>", unsafe_allow_html=True)
+            # 1. COMPLETED
+            if task["status"] == "completed":
+                st.success(f"✅ {subject_badge}{task['title']}")
+                # (Flashcards button REMOVED as requested)
+
+            # 2. ACTIVE / UNLOCKED
+            elif task["status"] == "unlocked":
+                with st.container(border=True):
+                    # Show subject badge prominently
+                    if "subject" in task and task["subject"]:
+                        st.caption(f"📘 {task['subject']}")
+                    st.markdown(f"**{task['title']}**")
+                    
+                    # The Focus Mode Button
+                    if st.button(f"🚀 Start Learning", key=f"start_{task['id']}"):
+                        st.session_state.focus_mode = True
+                        st.session_state.active_topic = task['title']
+                        st.rerun()
+                    
+                    # 1. THE QUIZ BUTTON
+                    if st.button(f"📝 Take Quiz (Unlock Next)", key=f"quiz_btn_{task['id']}"):
+                        st.session_state[f"show_quiz_{task['id']}"] = True
+                        st.rerun()
+
+                    # 2. THE QUIZ (Inline - no dialog to avoid Streamlit error)
+                    if st.session_state.get(f"show_quiz_{task['id']}", False):
+                        st.markdown("---")
+                        st.write("### 🧠 Knowledge Check")
                         
-                        # Unlocked & Not Passed -> Show Actions
-                        if status == "unlocked" and not passed:
-                            # Dropdown / Expandable Area
-                            with st.expander("Start Learning", expanded=True):
-                                # FOCUS MODE TRIGGER
-                                if st.button("🚀 Enter Focus Mode", key=f"focus_{t_id}", use_container_width=True):
-                                    st.session_state.focus_mode = True
-                                    st.session_state.active_topic = title
+                        # 1. FETCH QUIZ DATA (Dynamic)
+                        quiz_key = f"quiz_data_{task['id']}"
+                        if quiz_key not in st.session_state:
+                            with st.spinner(f"🤖 Generating quiz for '{task['title']}'..."):
+                                try:
+                                    resp = requests.post(f"{API_URL}/generate_quiz", json={"topic": task['title']}, timeout=120)
+                                    if resp.status_code == 200:
+                                        st.session_state[quiz_key] = resp.json().get("quiz", [])
+                                    else:
+                                        st.error("Failed to generate quiz.")
+                                except Exception as e:
+                                    st.error(f"Connection error: {e}")
+
+                        quiz_data = st.session_state.get(quiz_key, [])
+                        if quiz_data:
+                            st.caption("Answer the questions below. Next topic unlocks automatically.")
+                            
+                            score = 0
+                            user_answers = {}
+
+                            # 2. RENDER QUESTIONS
+                            for i, q in enumerate(quiz_data):
+                                st.markdown(f"**Q{i+1}: {q['question']}**")
+                                user_answers[i] = st.radio(
+                                    "Select one:",
+                                    q['options'],
+                                    key=f"q_{task['id']}_{i}"
+                                )
+                            
+                            st.markdown("---")
+                            
+                            col1, col2 = st.columns([1, 1])
+                            with col1:
+                                if st.button("🚀 Submit Quiz", key=f"submit_{task['id']}", use_container_width=True):
+                                    # GRADING LOGIC
+                                    for i, q in enumerate(quiz_data):
+                                        if user_answers[i] == q['answer']:
+                                            score += 1
+                                    
+                                    # STORE SCORE FOR ANALYTICS
+                                    st.session_state.topic_scores[task['id']] = {
+                                        "topic_title": task['title'],
+                                        "score": score,
+                                        "total": len(quiz_data),
+                                        "percentage": (score / len(quiz_data)) * 100
+                                    }
+                                    
+                                    st.info(f"📊 Your Score: {score}/{len(quiz_data)}")
+                                    
+                                    #  ALWAYS UNLOCK NEXT TOPIC
+                                    st.balloons()
+                                    
+                                    # --- ADAPTIVE LOGIC (Optional based on score) ---
+                                    if score == 3:
+                                        st.toast("🚀 Perfect Score! Accelerating future plan...", icon="⚡")
+                                        for future_task in st.session_state.study_plan:
+                                            if future_task["id"] > task["id"]:
+                                                if "Advanced" not in future_task["title"]:
+                                                    future_task["title"] = f"Advanced: {future_task['title']}"
+                                                    future_task["details"] = "Deep dive with complex examples. (AI Adjusted)"
+                                    
+                                    elif score == 2:
+                                        st.toast("⚠️ Good effort! Adding revision steps...", icon="🛡️")
+                                        for future_task in st.session_state.study_plan:
+                                            if future_task["id"] > task["id"]:
+                                                if "Review" not in future_task["title"]:
+                                                    future_task["title"] = f"Review & {future_task['title']}"
+                                                    future_task["details"] = "Includes recap of previous concepts. (AI Adjusted)"
+                                    
+                                    st.success(f"✅ Quiz completed! Unlocking next topic...")
+                                    time.sleep(1)
+                                    
+                                    # UNLOCK NEXT TOPIC
+                                    task["status"] = "completed"
+                                    task["quiz_passed"] = True
+                                    
+                                    current_id = task["id"]
+                                    for next_task in st.session_state.study_plan:
+                                        if next_task["id"] == current_id + 1:
+                                            next_task["status"] = "unlocked"
+                                            next_task["locked"] = False
+                                            break
+                                    
+                                    # Close Quiz
+                                    st.session_state[f"show_quiz_{task['id']}"] = False
+                                    st.rerun()
+                            
+                            with col2:
+                                if st.button("✕ Cancel", key=f"cancel_{task['id']}", use_container_width=True):
+                                    st.session_state[f"show_quiz_{task['id']}"] = False
                                     st.rerun()
 
-                                st.info("Mastery Required: 80%")
-                                if st.button("Take Mandatory Quiz", key=f"q_{t_id}", type="primary", use_container_width=True):
-                                    show_quiz_dialog(t_id, title)
-                                
-                                if st.button("Flashcards (Optional)", key=f"fc_{t_id}", use_container_width=True):
-                                    show_flashcard_dialog(t_id, title)
-                
-                st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
-                
-        st.markdown("</div>", unsafe_allow_html=True)
+            # 3. LOCKED
+            else:
+                with st.container(border=True):
+                    st.markdown(f"🔒 <span style='color:gray'>{task['title']}</span>", unsafe_allow_html=True)

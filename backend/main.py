@@ -179,5 +179,30 @@ async def query_kb(request: QueryRequest):
     """
     RAG query endpoint.
     """
-    response = query_knowledge_base(request.question,request.history)
+    from backend.rag_engine import query_knowledge_base
+    response = query_knowledge_base(request.question, request.history)
     return response
+
+class LessonRequest(BaseModel):
+    topic: str
+
+@app.post("/generate_lesson")
+def generate_lesson_endpoint(request: LessonRequest, db: Session = Depends(get_db)):
+    try:
+        from backend.rag_engine import generate_lesson_content
+        content = generate_lesson_content(request.topic)
+        return {"content": content}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class QuizRequest(BaseModel):
+    topic: str
+
+@app.post("/generate_quiz")
+def generate_quiz_endpoint(request: QuizRequest):
+    try:
+        from backend.rag_engine import generate_quiz_data
+        quiz_data = generate_quiz_data(request.topic)
+        return {"quiz": quiz_data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

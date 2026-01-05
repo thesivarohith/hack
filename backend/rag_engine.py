@@ -132,136 +132,367 @@ def query_knowledge_base(question: str, history: list = []):
             print(f"⚠️ Rewrite failed: {e}")
 
     # --- PART 2: THE "ROUTER" (Search or Chat?) ---
-    # If the rewritten question is just a greeting, skip the PDF search
-    is_greeting = False
-    if len(standalone_question.split()) < 5:
-        greetings = ["hi", "hello", "thanks", "good morning", "hey"]
-        if any(g in standalone_question.lower() for g in greetings):
-            is_greeting = True
 
-    if is_greeting:
-        return {
-            "answer": "Hello! I am your FocusFlow assistant. I can help you compare topics or explain concepts from your PDFs.",
-            "sources": []
-        }
-
-    # --- PART 3: SEARCH & ANSWER (Tutor Mode) ---
+def generate_study_plan(user_request: str):
+    print(f"🚀 STARTING PLAN: {user_request}")
     
-    # 1. Search the PDF (Increased k=5 and added debug)
-    # 1. Search the PDF (Increased k=6 and added debug)
-    docs = vector_store.similarity_search(standalone_question, k=6)
-    print(f"🔎 Found {len(docs)} relevant chunks")
+    # Initialize resources
+    vector_store = Chroma(
+        persist_directory=CACHE_DIR,
+        embedding_function=OllamaEmbeddings(model="nomic-embed-text")
+    )
+    llm = Ollama(model="llama3.2:1b")
     
-    # Construct context with explicit Source Labels
-    context_parts = []
+    # 1. Extract number of days from request (default to 5 if not specified)
+    import re
+    day_match = re.search(r'(\d+)\s*day', user_request.lower())
+    num_days = int(day_match.group(1)) if day_match else 5
+    
+    # 2. Get documents from MULTIPLE sources
+    docs = vector_store.similarity_search("topics subjects syllabus overview", k=20)
+    
+    # 3. Extract topics grouped by source document (each source = one subject)
+    topics_by_source = {}
     for doc in docs:
-        # Get a clean source name (e.g., "DSA.pdf" or "Video Title")
-        src = doc.metadata.get("title") or doc.metadata.get("source", "Unknown").split("/")[-1]
-        context_parts.append(f"SOURCE: {src}\nCONTENT: {doc.page_content}")
+        source = doc.metadata.get("source", "unknown")
+        if source not in topics_by_source:
+            topics_by_source[source] = {
+                "topics": [],
+                "subject_name": None  # Will extract subject name from content
+            }
+        
+        content = doc.page_content
+        
+        # Try to extract subject name from first occurrence
+        if topics_by_source[source]["subject_name"] is None:
+            # Look for subject indicators in first 200 chars
+            first_part = content[:200].upper()
+            if "MANUFACTURING" in first_part:
+                topics_by_source[source]["subject_name"] = "Manufacturing Technology"
+            elif "OOPS" in first_part or "OBJECT" in first_part:
+                topics_by_source[source]["subject_name"] = "Object-Oriented Programming"
+            elif "DATA STRUCT" in first_part:
+                topics_by_source[source]["subject_name"] = "Data Structures"
+            else:
+                # Use filename as fallback
+                filename = source.split('/')[-1].replace('.pdf', '').replace('-', ' ').title()
+                topics_by_source[source]["subject_name"] = filename
+        
+        # Extract topics from content
+        sentences = content.split('.')
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if len(sentence) > 20 and len(sentence) < 150:
+                # Filter for topic-like content
+                if any(kw in sentence.lower() for kw in ['topic', 'chapter', 'module', 'unit', 'concept', 'introduction', 'process', 'method']):
+                    topics_by_source[source]["topics"].append(sentence)
+                elif sentence[0].isupper() and len(sentence.split()) > 4:
+                    topics_by_source[source]["topics"].append(sentence)
     
-    context_text = "\n\n---\n\n".join(context_parts)
+    # Remove duplicates per source and limit
+    for source in topics_by_source:
+        topics_by_source[source]["topics"] = list(dict.fromkeys(topics_by_source[source]["topics"]))[:num_days * 2]
     
-    # 2. The "Tutor Persona" Prompt
-    final_prompt = f"""
-    You are FocusFlow, a friendly and expert AI Tutor.
-    Your goal is to explain concepts from the provided PDF content clearly and simply.
+    # 4. Create plan with MULTIPLE TOPICS PER DAY (one from each subject)
+    all_sources = list(topics_by_source.keys())
+    num_subjects = len(all_sources)
+    print(f"📚 Found {num_subjects} subjects/sources")
+    
+    if num_subjects == 0:
+        # Fallback if no sources found
+        return {
+            "days": [
+                {"day": i, "topic": f"Topic {i}", "details": "Study material", "status": "unlocked" if i == 1 else "locked", "subject": "General", "id": i}
+                for i in range(1, num_days + 1)
+            ]
+        }
+    
+    # Generate plan: For each day, create one topic from each subject
+    plan_days = []
+    topic_id = 1
+    
+    for day_num in range(1, num_days + 1):
+        # For this day, create one topic from each subject
+        for source_idx, source in enumerate(all_sources):
+            subject_name = topics_by_source[source]["subject_name"]
+            source_topics = topics_by_source[source]["topics"]
+            
+            # Get topic for this day from this subject
+            # Use round-robin approach: take different topic for each day
+            topic_idx = (day_num - 1) % len(source_topics) if source_topics else 0
+            
+            if source_topics and topic_idx < len(source_topics):
+                topic_text = source_topics[topic_idx]
+                # Clean up topic text
+                topic_text = topic_text[:100]  # Limit length
+            else:
+                topic_text = f"Concepts and Principles"
+            
+            # Create topic entry
+            plan_days.append({
+                "day": day_num,
+                "id": topic_id,
+                "subject": subject_name,
+                "topic": f"{subject_name}: {topic_text}",
+                "details": f"Study material for {subject_name}",
+                "status": "unlocked" if day_num == 1 else "locked",
+                "quiz_passed": False
+            })
+            topic_id += 1
+    
+    print(f"✅ Generated {len(plan_days)} topics across {num_days} days for {num_subjects} subjects")
+    return {"days": plan_days}
 
-    GUIDELINES:
-    - Tone: Encouraging, professional, and educational.
-    - Format: Use **Bold** for key terms and Bullet points for lists.
-    - Strategy: Don't just copy the text. Read the context, understand it, and explain it to the student.
-    - If the context lists problems (like DSA), summarize the types of problems found.
-    - Source Check: The context now includes 'SOURCE:' labels. If the user asks about a specific file (like 'the PDF' or 'the Video'), ONLY use information from that specific source.
+def generate_lesson_content(topic_title: str):
+    print(f"🚀 GENERATING LESSON FOR: {topic_title}")
+    
+    # Initialize resources
+    vector_store = Chroma(
+        persist_directory=CACHE_DIR,
+        embedding_function=OllamaEmbeddings(model="nomic-embed-text")
+    )
+    llm = Ollama(model="llama3.2:1b")
+    
+    # 1. Search DB for comprehensive context (increased from 4 to 8 chunks)
+    docs = vector_store.similarity_search(topic_title, k=8)
+    context_text = "\n".join([d.page_content[:500] for d in docs])  # Increased from 400 to 500 chars
+    
+    # 2. Enhanced Educational Prompt for detailed content
+    prompt = f"""Create a comprehensive study guide for: {topic_title}
 
-    CONTEXT FROM PDF:
-    {context_text}
+Context from course materials:
+{context_text}
 
-    STUDENT'S QUESTION:
-    {standalone_question}
+Write a DETAILED study guide in Markdown format with these sections:
 
-    YOUR LESSON:
+## Introduction
+Explain what this topic is and why it's important (2-3 paragraphs)
+
+## Core Concepts
+Break down the main ideas into clear subsections. For each concept:
+- Define it clearly
+- Explain how it works
+- Describe when and why to use it
+
+## Key Points & Rules
+List important formulas, rules, syntax, or principles. Include code examples if applicable.
+
+## Practical Examples
+Provide 2-3 real-world examples showing:
+- The problem scenario
+- How the concept solves it
+- Step-by-step walkthrough
+
+## Common Mistakes
+Highlight typical errors students make and how to avoid them
+
+## Summary
+Quick bullet-point recap of key takeaways
+
+Make this comprehensive and educational. Aim for 600-800 words. Use clear explanations a student can understand.
+
+Markdown content:"""
+    
+    # 3. Generate
+    try:
+        response = llm.invoke(prompt)
+        # Clean potential markdown wrappers
+        clean_text = response.replace("```markdown", "").replace("```", "").strip()
+        
+        # If response is too short, add a note
+        if len(clean_text) < 200:
+            clean_text += "\n\n*Note: For more detailed information, please refer to your course materials or ask specific questions in the chat.*"
+        
+        return clean_text
+    except Exception as e:
+        return f"### Error Generating Lesson\nCould not retrieve content: {e}"
+
+def query_knowledge_base(question: str, history: list = []):
+    print(f"📡 QUERY: {question}")
+    
+    # Init
+    vector_store = Chroma(
+        persist_directory=CACHE_DIR,
+        embedding_function=OllamaEmbeddings(model="nomic-embed-text")
+    )
+    llm = Ollama(model="llama3.2:1b")
+    
+    # 1. Search
+    docs = vector_store.similarity_search(question, k=3)
+    context = "\n".join([d.page_content[:500] for d in docs])
+    
+    # 2. Format History
+    history_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in history])
+    
+    # 3. Prompt
+    prompt = f"""
+    Context: {context}
+    Chat History:
+    {history_text}
+    
+    User Question: {question}
+    
+    TASK: Answer the user's question based on the context.
+    If you don't know, say "I don't know".
     """
     
-    # 3. Generate Answer
-    answer = llm.invoke(final_prompt)
+    res = llm.invoke(prompt)
     
-    # 4. Smart Source Formatting
+    # Return source metadata
     sources_list = []
-    for doc in docs:
-        # Check if it's a Video (YoutubeLoader adds 'title')
-        if "title" in doc.metadata:
-            source_label = f"📺 {doc.metadata['title']}"
-            loc_label = "Transcript"
-        else:
-            # Fallback for PDFs
-            source_label = doc.metadata.get("source", "Unknown").split("/")[-1]
-            loc_label = f"Page {doc.metadata.get('page', 0) + 1}"
-
-        sources_list.append({
-            "source": source_label,
-            "location": loc_label
-        })
-
+    for d in docs:
+        meta = d.metadata
+        sources_list.append({"source": meta.get("source", "Unknown"), "page": meta.get("page", 1)})
+        
     return {
-        "answer": answer,
+        "answer": res,
         "sources": sources_list
     }
-
-def generate_study_plan(user_request: str) -> dict:
-    print(f"🚀 STARTING PLAN GENERATION for: {user_request}")
-    import json
-    import time
+def generate_quiz_data(topic_title: str):
+    print(f"🚀 GENERATING QUIZ FOR: {topic_title}")
     
-    # 1. Setup Retrieval & LLM
+    # Initialize resources
     vector_store = Chroma(
         persist_directory=CACHE_DIR,
         embedding_function=OllamaEmbeddings(model="nomic-embed-text")
     )
     llm = Ollama(model="llama3.2:1b")
 
-    # --- 1. THE BACKUP PLAN (Guaranteed to work) ---
-    backup_plan = {
-        "days": [
-            {"id": 1, "day": 1, "topic": "Fundamentals of the Subject", "details": "Core definitions and basic laws.", "locked": False, "quiz_passed": False},
-            {"id": 2, "day": 2, "topic": "Advanced Theories", "details": "Applying the laws to complex systems.", "locked": True, "quiz_passed": False},
-            {"id": 3, "day": 3, "topic": "Practical Applications", "details": "Real-world case studies and problems.", "locked": True, "quiz_passed": False}
-        ]
-    }
+    # 1. Search Context
+    docs = vector_store.similarity_search(topic_title, k=3)
+    context_text = "\n".join([d.page_content[:300] for d in docs])
+    
+    # Helper: Generate realistic fallback quiz from context
+    def create_context_based_fallback():
+        """Generate realistic quiz questions from context when LLM fails"""
+        # Extract key terms and concepts from context
+        sentences = context_text.split('.')
+        key_concepts = []
+        for sentence in sentences[:10]:  # Look at first 10 sentences
+            words = sentence.strip().split()
+            if len(words) > 3:
+                key_concepts.append(sentence.strip())
+        
+        if not key_concepts or len(key_concepts) < 3:
+            # Ultimate fallback if no context
+            return [
+                {
+                    "question": f"Which statement best describes {topic_title}?",
+                    "options": [
+                        "A core concept that requires understanding of fundamentals",
+                        "An advanced technique used in specialized applications",
+                        "A theoretical framework with practical implementations"
+                    ],
+                    "answer": "A core concept that requires understanding of fundamentals"
+                },
+                {
+                    "question": f"What is the primary purpose of {topic_title}?",
+                    "options": [
+                        "To optimize performance and efficiency",
+                        "To provide structure and organization",
+                        "To enable complex problem solving"
+                    ],
+                    "answer": "To provide structure and organization"
+                },
+                {
+                    "question": f"When should you apply {topic_title}?",
+                    "options": [
+                        "When dealing with large-scale systems",
+                        "During the initial design phase",
+                        "When specific requirements are identified"
+                    ],
+                    "answer": "When specific requirements are identified"
+                }
+            ]
+        
+        # Generate questions from extracted concepts
+        fallback_quiz = []
+        for i, concept in enumerate(key_concepts[:3]):
+            # Create slight variations of the concept as distractors
+            words = concept.split()
+            if len(words) > 5:
+                # Create plausible wrong answers by modifying the concept
+                correct_answer = ' '.join(words[:15])  # First part as correct
+                distractor1 = ' '.join(words[2:10] + words[:2]) if len(words) > 10 else "Alternative interpretation of the concept"
+                distractor2 = ' '.join(words[5:15]) if len(words) > 15 else "Related but distinct concept"
+                
+                fallback_quiz.append({
+                    "question": f"Regarding {topic_title}, which statement is most accurate?",
+                    "options": [correct_answer, distractor1, distractor2],
+                    "answer": correct_answer
+                })
+        
+        while len(fallback_quiz) < 3:
+            fallback_quiz.append({
+                "question": f"What is an important aspect of {topic_title}?",
+                "options": [
+                    "Understanding the underlying principles",
+                    "Memorizing specific implementation details",
+                    "Following standard industry practices"
+                ],
+                "answer": "Understanding the underlying principles"
+            })
+        
+        return fallback_quiz[:3]
+    
+    # 2. Enhanced prompt for realistic quiz questions
+    prompt = f"""Create 3 challenging multiple choice questions about: {topic_title}
 
-    # --- 2. TRY THE AI ---
+Context: {context_text}
+
+CRITICAL REQUIREMENTS for answer choices:
+1. Make wrong answers (distractors) PLAUSIBLE and REALISTIC
+2. Use common misconceptions as wrong answers
+3. Make distractors similar enough that students need real understanding to choose correctly
+4. Avoid obviously wrong or silly options like "Option A", "Option B"
+5. Base all options on the actual context provided
+
+Example of GOOD distractors (realistic and plausible):
+Q: "What is encapsulation in OOP?"
+- "Hiding implementation details and exposing only necessary interfaces" [CORRECT]
+- "Combining data and methods that operate on that data into a single unit" [PLAUSIBLE - related to OOP but describes a class]
+- "The ability of objects to take multiple forms through inheritance" [PLAUSIBLE - actually polymorphism]
+
+Example of BAD distractors (too obvious):
+- "A type of loop"
+- "Option A"
+- "None of the above"
+
+Output as JSON array with 3 questions:
+[
+  {{
+    "question": "Specific question text?",
+    "options": ["Realistic wrong answer 1", "Correct answer", "Realistic wrong answer 2"],
+    "answer": "Correct answer"
+  }},
+  ... (2 more questions)
+]
+
+JSON:"""
+    
     try:
-        # Limit context to be very fast
-        docs = vector_store.similarity_search("Syllabus topics", k=2)
-        if not docs:
-            context_text = "General syllabus topics."
-        else:
-            context_text = "\n".join([d.page_content[:200] for d in docs]) 
+        response = llm.invoke(prompt)
+        clean_json = response.replace("```json", "").replace("```", "").strip()
+        import json
+        quiz_data = json.loads(clean_json)
         
-        prompt = f"""
-        Context: {context_text}
-        Task: Create a 3-day study plan (JSON).
-        Format: {{"days": [{{"id": 1, "day": 1, "topic": "...", "details": "...", "locked": false}}]}}
-        Output JSON only.
-        """
+        # Ensure it's a list
+        if not isinstance(quiz_data, list):
+            raise ValueError("Quiz data must be a list")
         
-        print("🤖 Asking AI (with 15s timeout expectation)...")
-        # In a real production app we would wrap this in a thread timeout, 
-        # but for now we rely on the try/except block catching format errors.
-        raw_output = llm.invoke(prompt)
-        print("✅ AI Responded.")
+        # POST-PROCESSING: Ensure exactly 3 questions
+        if len(quiz_data) < 3:
+            print(f"⚠️ LLM only generated {len(quiz_data)} questions, padding with context-based questions...")
+            context_fallback = create_context_based_fallback()
+            # Add missing questions from fallback
+            questions_needed = 3 - len(quiz_data)
+            quiz_data.extend(context_fallback[:questions_needed])
+        elif len(quiz_data) > 3:
+            quiz_data = quiz_data[:3]  # Trim to exactly 3
         
-        # Clean & Parse
-        clean_json = raw_output.replace("```json", "").replace("```", "").strip()
-        plan = json.loads(clean_json)
+        return quiz_data
         
-        # Validate Keys (The "Sanitizer")
-        for i, task in enumerate(plan.get("days", [])):
-            if "id" not in task: task["id"] = i + 1
-            if "topic" not in task: task["topic"] = f"Day {i+1} Topic"
-            task["quiz_passed"] = False
-            
-        return plan
-
     except Exception as e:
-        print(f"⚠️ AI FAILED ({e}). SWITCHING TO BACKUP PLAN.")
-        return backup_plan
+        print(f"⚠️ Quiz Gen Failed: {e}. Using context-based fallback...")
+        # Return context-based fallback instead of generic placeholders
+        return create_context_based_fallback()
