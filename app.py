@@ -16,12 +16,59 @@ st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
     
+    /* ========== MATERIAL DESIGN FOUNDATION ========== */
+    :root {
+        --md-primary: #1A73E8;
+        --md-primary-dark: #1557B0;
+        --md-elevation-1: 0 1px 2px 0 rgba(60,64,67,.3), 0 1px 3px 1px rgba(60,64,67,.15);
+        --md-elevation-2: 0 1px 2px 0 rgba(60,64,67,.3), 0 2px 6px 2px rgba(60,64,67,.15);
+        --md-elevation-3: 0 4px 8px 3px rgba(60,64,67,.15), 0 1px 3px rgba(60,64,67,.3);
+        --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+        --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+        --radius-md: 8px;
+    }
+    
+    html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; }
+    
     /* Global Reset & Fonts */
     html, body, [class*="css"] {
         font-family: 'Inter', sans-serif;
         color: #1F2937;
         background-color: #FAFAFA;
     }
+    
+    /* Material Design Button Enhancements */
+    .stButton > button {
+        box-shadow: var(--md-elevation-2) !important;
+        transition: all var(--transition-fast) !important;
+        border-radius: var(--radius-md) !important;
+    }
+    .stButton > button:hover {
+        box-shadow: var(--md-elevation-3) !important;
+        transform: translateY(-1px);
+    }
+    .stButton > button:active {
+        transform: translateY(0);
+    }
+    
+    /* Smooth Animations */
+    @keyframes fadeInUp {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    .stChatMessage { animation: fadeInUp var(--transition-normal) ease-out; }
+    
+    /* Touch-Friendly Mobile */
+    @media (max-width: 768px) {
+        .stButton > button {
+            min-height: 48px !important;
+            font-size: 16px !important;
+        }
+        body { font-size: 16px; }
+        h1 { font-size: 24px !important; }
+        h2 { font-size: 20px !important; }
+    }
+
 
     /* Input Styling for 'Exact Replica' look on Timer */
     div[data-testid="stNumberInput"] {
@@ -233,6 +280,29 @@ st.markdown("""
             font-size: 0.9rem !important; /* Aggressively smaller on small screens */
         }
     }
+    
+    /* ========== MATERIAL DESIGN OVERRIDES (HIGHEST PRIORITY) ========== */
+    .stButton > button {
+        background: #1A73E8 !important;
+        color: white !important;
+        box-shadow: 0 1px 2px 0 rgba(60,64,67,.3), 0 2px 6px 2px rgba(60,64,67,.15) !important;
+        transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+        border-radius: 8px !important;
+        border: none !important;
+        font-weight: 500 !important;
+        padding: 10px 24px !important;
+    }
+    
+    .stButton > button:hover {
+        background: #1557B0 !important;
+        box-shadow: 0 4px 8px 3px rgba(60,64,67,.15), 0 1px 3px rgba(60,64,67,.3) !important;
+        transform: translateY(-2px) !important;
+    }
+    
+    .stButton > button:active {
+        transform: translateY(0) !important;
+        box-shadow: 0 1px 2px 0 rgba(60,64,67,.3), 0 1px 3px 1px rgba(60,64,67,.15) !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -289,7 +359,7 @@ if "profile_loaded" not in st.session_state:
             if profile.get("mastery_tracker"):
                 st.session_state.mastery_data = profile["mastery_tracker"]
             
-            print(f"✅ Profile loaded: {len(plan_topics)} topics, {len(quiz_history)} quizzes")
+
         else:
             st.session_state.study_plan = []
             st.error(f"Could not load profile: {resp.status_code}")
@@ -1323,9 +1393,7 @@ if right_col:
                                             "total": len(quiz_data),
                                             "time_taken": 0
                                         }, timeout=5)
-                                        print(f"✅ Quiz auto-saved for topic {task['id']}")
-                                    except Exception as e:
-                                        print(f"⚠️ Failed to save quiz: {e}")
+
                                     
                                     # Close Quiz
                                     st.session_state[f"show_quiz_{task['id']}"] = False

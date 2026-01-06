@@ -66,8 +66,7 @@ class StudentProfileManager:
             temp_file.replace(self.profile_file)
             
         except Exception as e:
-            print(f"Error saving profile: {e}")
-            # Restore from backup if exists
+            # Error saving profile, attempt to restore from backup
             if self.backup_file.exists():
                 shutil.copy2(self.backup_file, self.profile_file)
             raise
@@ -85,7 +84,7 @@ class StudentProfileManager:
                 
                 return profile
             except Exception as e:
-                print(f"Error loading profile: {e}")
+
                 # Return default profile
                 self._ensure_profile_exists()
                 return self.load_profile()

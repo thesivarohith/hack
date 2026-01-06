@@ -29,7 +29,7 @@ def ingest_document(file_path: str):
         embedding=OllamaEmbeddings(model="nomic-embed-text"),
         persist_directory=CACHE_DIR
     )
-    print(f"Ingested {len(splits)} chunks from {file_path}")
+    # Ingestion successful
 
 def ingest_url(url: str):
     """
@@ -40,18 +40,18 @@ def ingest_url(url: str):
     docs = []
     try:
         if "youtube.com" in url or "youtu.be" in url:
-            print(f"Loading YouTube Video: {url}")
+
             try:
                 # Try with metadata first (requires pytube, often flaky)
                 loader = YoutubeLoader.from_youtube_url(url, add_video_info=True)
                 docs = loader.load()
             except Exception as e:
-                print(f"⚠️ Metadata fetch failed ({e}). Retrying with transcript only...")
+
                 # Fallback: Transcript only (no title/author)
                 loader = YoutubeLoader.from_youtube_url(url, add_video_info=False)
                 docs = loader.load()
         else:
-            print(f"Loading Website: {url}")
+
             loader = WebBaseLoader(url)
             docs = loader.load()
             
@@ -70,7 +70,7 @@ def ingest_url(url: str):
         )
         
         title = docs[0].metadata.get("title", url) if docs else url
-        print(f"Ingested {len(splits)} chunks from {title}")
+
         return title
         
     except Exception as e:
@@ -90,51 +90,15 @@ def delete_document(source_path: str):
     try:
         # Accessing the underlying chroma collection to delete by metadata
         vector_store._collection.delete(where={"source": source_path})
-        print(f"Deleted vectors for source: {source_path}")
+
     except Exception as e:
         print(f"Error deleting from ChromaDB: {e}")
 
 # In backend/rag_engine.py
 
-def query_knowledge_base(question: str, history: list = []):
-    llm = Ollama(model="llama3.2:1b")
-    
-    vector_store = Chroma(
-        persist_directory=CACHE_DIR,
-        embedding_function=OllamaEmbeddings(model="nomic-embed-text")
-    )
-    
-    # --- PART 1: CONTEXT REWRITING (The Manual Fix) ---
-    standalone_question = question
-    if history:
-        # We confirm history exists, so we rewrite the query
-        try:
-            # Format history into a string for the AI
-            history_text = "\n".join([f"{msg.get('role', 'user')}: {msg.get('content', '')}" for msg in history[-4:]])
-            
-            rewrite_prompt = f"""
-            Rewrite the following question to be a standalone sentence that includes context from the chat history. 
-            Do NOT answer the question. Just rewrite it.
-            
-            Chat History:
-            {history_text}
-            
-            User's Follow-up: {question}
-            
-            Rewritten Question:"""
-            
-            # Get the smarter question from the AI
-            standalone_question = llm.invoke(rewrite_prompt).strip()
-            # Clean up if the AI adds quotes
-            standalone_question = standalone_question.replace('"', '').replace("Here is the rewritten question:", "")
-            print(f"🔄 LOGIC FIX: Rewrote '{question}' -> '{standalone_question}'")
-        except Exception as e:
-            print(f"⚠️ Rewrite failed: {e}")
-
-    # --- PART 2: THE "ROUTER" (Search or Chat?) ---
 
 def generate_study_plan(user_request: str):
-    print(f"🚀 STARTING PLAN: {user_request}")
+
     
     # Initialize resources
     vector_store = Chroma(
@@ -196,7 +160,7 @@ def generate_study_plan(user_request: str):
     # 4. Create plan with MULTIPLE TOPICS PER DAY (one from each subject)
     all_sources = list(topics_by_source.keys())
     num_subjects = len(all_sources)
-    print(f"📚 Found {num_subjects} subjects/sources")
+
     
     if num_subjects == 0:
         # Fallback if no sources found
@@ -240,11 +204,11 @@ def generate_study_plan(user_request: str):
             })
             topic_id += 1
     
-    print(f"✅ Generated {len(plan_days)} topics across {num_days} days for {num_subjects} subjects")
+
     return {"days": plan_days}
 
 def generate_lesson_content(topic_title: str):
-    print(f"🚀 GENERATING LESSON FOR: {topic_title}")
+
     
     # Initialize resources
     vector_store = Chroma(
@@ -338,7 +302,7 @@ Markdown content:"""
 
 
 def query_knowledge_base(question: str, history: list = []):
-    print(f"📡 QUERY: {question}")
+
     
     # Init
     vector_store = Chroma(
@@ -379,7 +343,7 @@ def query_knowledge_base(question: str, history: list = []):
         "sources": sources_list
     }
 def generate_quiz_data(topic_title: str):
-    print(f"🚀 GENERATING QUIZ FOR: {topic_title}")
+
     
     # Initialize resources
     vector_store = Chroma(
@@ -512,7 +476,7 @@ JSON:"""
         
         # POST-PROCESSING: Ensure exactly 3 questions
         if len(quiz_data) < 3:
-            print(f"⚠️ LLM only generated {len(quiz_data)} questions, padding with context-based questions...")
+
             context_fallback = create_context_based_fallback()
             # Add missing questions from fallback
             questions_needed = 3 - len(quiz_data)
@@ -523,6 +487,6 @@ JSON:"""
         return quiz_data
         
     except Exception as e:
-        print(f"⚠️ Quiz Gen Failed: {e}. Using context-based fallback...")
+
         # Return context-based fallback instead of generic placeholders
         return create_context_based_fallback()
