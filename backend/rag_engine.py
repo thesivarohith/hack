@@ -257,11 +257,33 @@ def generate_lesson_content(topic_title: str):
     docs = vector_store.similarity_search(topic_title, k=8)
     context_text = "\n".join([d.page_content[:500] for d in docs])  # Increased from 400 to 500 chars
     
-    # 2. Enhanced Educational Prompt for detailed content
+    # 2. Extract source citations
+    sources_list = []
+    seen_sources = set()
+    for doc in docs[:5]:  # Use top 5 sources
+        source_file = doc.metadata.get("source", "Unknown")
+        source_filename = source_file.split("/")[-1] if "/" in source_file else source_file
+        page = doc.metadata.get("page", "N/A")
+        
+        # Avoid duplicate sources
+        source_key = f"{source_filename}_p{page}"
+        if source_key not in seen_sources:
+            sources_list.append({
+                "filename": source_filename,
+                "page": page
+            })
+            seen_sources.add(source_key)
+    
+    # Build sources reference text
+    sources_text = "\n".join([f"- {src['filename']}, page {src['page']}" for src in sources_list])
+    
+    # 3. Enhanced Educational Prompt for detailed content with citations
     prompt = f"""Create a comprehensive study guide for: {topic_title}
 
 Context from course materials:
 {context_text}
+
+Available sources: {sources_text}
 
 Write a DETAILED study guide in Markdown format with these sections:
 
@@ -289,11 +311,12 @@ Highlight typical errors students make and how to avoid them
 ## Summary
 Quick bullet-point recap of key takeaways
 
+IMPORTANT: Add inline citations where appropriate using the format [Source: filename]. 
 Make this comprehensive and educational. Aim for 600-800 words. Use clear explanations a student can understand.
 
 Markdown content:"""
     
-    # 3. Generate
+    # 4. Generate
     try:
         response = llm.invoke(prompt)
         # Clean potential markdown wrappers
@@ -303,9 +326,16 @@ Markdown content:"""
         if len(clean_text) < 200:
             clean_text += "\n\n*Note: For more detailed information, please refer to your course materials or ask specific questions in the chat.*"
         
+        # Append sources reference section
+        if sources_list:
+            clean_text += "\n\n---\n\n### 📚 References\n\n"
+            for idx, src in enumerate(sources_list, 1):
+                clean_text += f"{idx}. **{src['filename']}**, page {src['page']}\n"
+        
         return clean_text
     except Exception as e:
         return f"### Error Generating Lesson\nCould not retrieve content: {e}"
+
 
 def query_knowledge_base(question: str, history: list = []):
     print(f"📡 QUERY: {question}")

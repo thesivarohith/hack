@@ -253,17 +253,53 @@ if "topic_scores" not in st.session_state: st.session_state.topic_scores = {}  #
 # Focus Mode State
 if "focus_mode" not in st.session_state: st.session_state.focus_mode = False
 if "active_topic" not in st.session_state: st.session_state.active_topic = None
-if "study_plan" not in st.session_state:
-    # START EMPTY as requested
-    st.session_state.study_plan = [] 
 
-# ... (check_internet remains)
-
-# ... (Search logic remains)
-
-# ...
-
-
+# PERSISTENCE: Load student profile on first load
+if "profile_loaded" not in st.session_state:
+    st.session_state.profile_loaded = True
+    try:
+        resp = requests.get(f"{API_URL}/student/profile", timeout=5)
+        if resp.status_code == 200:
+            profile = resp.json()
+            
+            # DEBUG: Show what we got
+            plan_topics = profile.get("study_plan", {}).get("topics", [])
+            quiz_history = profile.get("quiz_history", [])
+            
+            # Restore study plan if exists
+            if plan_topics:
+                st.session_state.study_plan = plan_topics
+                st.toast(f"📚 Restored {len(plan_topics)} topics from previous session", icon="✅")
+            else:
+                st.session_state.study_plan = []
+                # Don't show message for first-time users
+            
+            # Restore quiz scores
+            if quiz_history:
+                for quiz_record in quiz_history:
+                    st.session_state.topic_scores[quiz_record["topic_id"]] = {
+                        "topic_title": quiz_record.get("topic_title"),
+                        "score": quiz_record["score"],
+                        "total": quiz_record["total"],
+                        "percentage": quiz_record["percentage"]
+                    }
+                st.toast(f"📊 Restored {len(quiz_history)} quiz results", icon="✅")
+            
+            # Restore mastery data
+            if profile.get("mastery_tracker"):
+                st.session_state.mastery_data = profile["mastery_tracker"]
+            
+            print(f"✅ Profile loaded: {len(plan_topics)} topics, {len(quiz_history)} quizzes")
+        else:
+            st.session_state.study_plan = []
+            st.error(f"Could not load profile: {resp.status_code}")
+    except Exception as e:
+        st.session_state.study_plan = []
+        st.error(f"Could not connect to backend: {e}")
+else:
+    # Ensure study_plan exists even if profile load was skipped
+    if "study_plan" not in st.session_state:
+        st.session_state.study_plan = []
 
 def check_internet():
     """
@@ -889,6 +925,15 @@ if st.session_state.focus_mode:
             for msg in st.session_state.chat_history:
                  with st.chat_message(msg["role"]):
                      st.write(msg["content"])
+                     
+                     # Show sources for assistant messages
+                     if msg["role"] == "assistant" and msg.get("sources"):
+                         with st.expander("📚 Sources", expanded=False):
+                             for idx, s in enumerate(msg["sources"], 1):
+                                 if isinstance(s, dict):
+                                     filename = s.get("source", "").split("/")[-1]
+                                     page = s.get("page", "N/A")
+                                     st.caption(f"{idx}. 📄 {filename}, p.{page}")
         
         # Chat input at bottom - messages will appear in container above
         if prompt := st.chat_input(f"Ask about {st.session_state.active_topic}..."):
@@ -903,7 +948,13 @@ if st.session_state.focus_mode:
                      if resp.status_code == 200:
                          data = resp.json()
                          ans = data.get("answer", "No answer.")
-                         st.session_state.chat_history.append({"role": "assistant", "content": ans})
+                         srcs = data.get("sources", [])
+                         
+                         # Include sources if available
+                         if srcs:
+                             st.session_state.chat_history.append({"role": "assistant", "content": ans, "sources": srcs})
+                         else:
+                             st.session_state.chat_history.append({"role": "assistant", "content": ans})
                      else:
                          st.session_state.chat_history.append({"role": "assistant", "content": "Error processing request."})
                  except Exception as e:
@@ -992,17 +1043,22 @@ if not st.session_state.focus_mode:
                             
                             # Source Display Logic (MUST BE INSIDE THE LOOP)
                             if msg["role"] == "assistant" and msg.get("sources"):
-                                with st.expander("Sources used"):
-                                    for s in msg["sources"]:
+                                with st.expander("📚 View Sources", expanded=False):
+                                    st.caption("Information retrieved from:")
+                                    for idx, s in enumerate(msg["sources"], 1):
                                         # Crash Proof Check: Handle string vs dict
                                         if isinstance(s, str):
-                                            st.info(f"📄 {s[:100]}...")
+                                            st.markdown(f"**{idx}.** {s[:100]}...")
                                         else:
                                             # It is a dictionary
                                             src = s.get("source", "Document")
-                                            page_num = s.get("page", 1)
-                                            label = f"📄 {src} | Page {page_num}"
-                                            st.caption(label)
+                                            # Extract filename from path
+                                            filename = src.split("/")[-1] if "/" in src else src
+                                            page_num = s.get("page", "N/A")
+                                            
+                                            # Display with nice formatting
+                                            st.markdown(f"**{idx}.** 📄 `{filename}` • Page {page_num}")
+
             # 2. Input Area (Pinned to bottom of the visible card by being outside scroll container)
             with st.form(key="chat_form", clear_on_submit=True):
                 cols = st.columns([0.85, 0.15])
@@ -1051,23 +1107,23 @@ if right_col:
         today = date.today()
         selected_date = st.date_input("📅 Calendar", value=today)
 
-        # --- LOGIC: POPUP FOR OTHER DATES ---
-        # If user selects a future date, show its plan in a dialog
+        # --- LOGIC: Show plan for selected date ---
+        # If user selects a future date, show its plan inline
         if selected_date != today:
-            @st.dialog(f"Plan for {selected_date}")
-            def show_future_plan():
-                delta = selected_date - today
-                day_offset = delta.days + 1
-                # Filter plan for this hypothetical day
-                day_tasks = [t for t in st.session_state.study_plan if t.get("day") == day_offset]
-                
-                if day_tasks:
-                    for t in day_tasks:
-                        st.markdown(f"- **{t['title']}**")
-                else:
-                    st.info("No plan generated for this specific date yet.")
+            delta = selected_date - today
+            day_offset = delta.days + 1
             
-            show_future_plan()
+            st.markdown(f"### 📋 Plan for {selected_date}")
+            # Filter plan for this hypothetical day
+            day_tasks = [t for t in st.session_state.study_plan if t.get("day") == day_offset]
+            
+            if day_tasks:
+                for t in day_tasks:
+                    st.markdown(f"- **{t['title']}**")
+            else:
+                st.info("No plan generated for this specific date yet.")
+            
+            st.markdown("---")
 
         # --- B. TALK TO CALENDAR ---
         with st.form("calendar_chat_form", clear_on_submit=True):
@@ -1102,6 +1158,22 @@ if right_col:
                                 task["title"] = task.get("topic", f"Topic {task['id']}") # Fallback title
                             
                             st.session_state.study_plan = raw_plan
+                            
+                            # AUTO-SAVE: Persist the new plan
+                            try:
+                                num_days = max([t.get("day", 1) for t in raw_plan]) if raw_plan else 0
+                                save_resp = requests.post(f"{API_URL}/student/save_plan", json={
+                                    "topics": raw_plan,
+                                    "num_days": num_days
+                                }, timeout=5)
+                                
+                                if save_resp.status_code == 200:
+                                    st.toast(f"💾 Progress saved: {len(raw_plan)} topics", icon="✅")
+                                else:
+                                    st.warning(f"Could not save progress: {save_resp.text}")
+                            except Exception as e:
+                                st.warning(f"Could not save progress: {e}")
+                            
                             st.success("📅 Plan Created! Check Today's Topics.")
                             st.rerun()
                         else:
@@ -1239,6 +1311,21 @@ if right_col:
                                             next_task["status"] = "unlocked"
                                             next_task["locked"] = False
                                             break
+                                    
+                                    # AUTO-SAVE: Persist quiz score and completion
+                                    try:
+                                        subject = task.get("subject", "General")
+                                        requests.post(f"{API_URL}/student/quiz_complete", json={
+                                            "topic_id": task["id"],
+                                            "topic_title": task["title"],
+                                            "subject": subject,
+                                            "score": score,
+                                            "total": len(quiz_data),
+                                            "time_taken": 0
+                                        }, timeout=5)
+                                        print(f"✅ Quiz auto-saved for topic {task['id']}")
+                                    except Exception as e:
+                                        print(f"⚠️ Failed to save quiz: {e}")
                                     
                                     # Close Quiz
                                     st.session_state[f"show_quiz_{task['id']}"] = False

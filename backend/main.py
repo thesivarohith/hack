@@ -2,13 +2,17 @@ from fastapi import FastAPI, Depends, UploadFile, File, HTTPException
 from sqlalchemy.orm import Session
 from backend.database import SessionLocal, engine, Source, Schedule, Mastery, init_db
 from backend.rag_engine import ingest_document, query_knowledge_base
+from backend.student_data import StudentProfileManager
 import shutil
 import os
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional, Dict
 
 # Create tables
 init_db()
+
+# Initialize Student Profile Manager
+profile_manager = StudentProfileManager()
 
 app = FastAPI(title="FocusFlow Backend")
 
@@ -204,5 +208,108 @@ def generate_quiz_endpoint(request: QuizRequest):
         from backend.rag_engine import generate_quiz_data
         quiz_data = generate_quiz_data(request.topic)
         return {"quiz": quiz_data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ========== STUDENT PROFILE ENDPOINTS ==========
+
+@app.get("/student/profile")
+def get_student_profile():
+    """Load student profile"""
+    try:
+        profile = profile_manager.load_profile()
+        return profile
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class SaveProgressRequest(BaseModel):
+    current_day: int
+    current_topic_id: Optional[int]
+    plan_id: Optional[str]
+
+@app.post("/student/save_progress")
+def save_progress(request: SaveProgressRequest):
+    """Save current study progress"""
+    try:
+        profile_manager.update_current_state(
+            request.current_day,
+            request.current_topic_id,
+            request.plan_id
+        )
+        return {"status": "saved"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class SavePlanRequest(BaseModel):
+    topics: List[Dict]
+    num_days: int
+
+@app.post("/student/save_plan")
+def save_study_plan(request: SavePlanRequest):
+    """Save generated study plan"""
+    try:
+        plan_id = profile_manager.save_study_plan(request.topics, request.num_days)
+        return {"status": "saved", "plan_id": plan_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class QuizCompleteRequest(BaseModel):
+    topic_id: int
+    topic_title: str
+    subject: str
+    score: int
+    total: int
+    time_taken: int = 0
+
+@app.post("/student/quiz_complete")
+def record_quiz(request: QuizCompleteRequest):
+    """Record quiz completion"""
+    try:
+        profile_manager.update_quiz_score(
+            request.topic_id,
+            request.topic_title,
+            request.subject,
+            request.score,
+            request.total,
+            request.time_taken
+        )
+        profile_manager.mark_topic_complete(request.topic_id)
+        return {"status": "recorded"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/student/mastery")
+def get_mastery_data():
+    """Get subject mastery data"""
+    try:
+        mastery = profile_manager.get_mastery_data()
+        return {"mastery": mastery}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class IncompleteTaskRequest(BaseModel):
+    topic_id: int
+    from_day: int
+    reason: str = "not_completed"
+
+@app.post("/student/incomplete_task")
+def add_incomplete_task(request: IncompleteTaskRequest):
+    """Mark a task as incomplete"""
+    try:
+        profile_manager.add_incomplete_task(
+            request.topic_id,
+            request.from_day,
+            request.reason
+        )
+        return {"status": "added"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/student/incomplete_tasks/{current_day}")
+def get_incomplete_tasks(current_day: int):
+    """Get incomplete tasks from previous days"""
+    try:
+        tasks = profile_manager.get_incomplete_tasks(current_day)
+        return {"incomplete_tasks": tasks}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
