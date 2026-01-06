@@ -1393,7 +1393,8 @@ if right_col:
                                             "total": len(quiz_data),
                                             "time_taken": 0
                                         }, timeout=5)
-
+                                    except Exception:
+                                        pass  # Silent fail for auto-save
                                     
                                     # Close Quiz
                                     st.session_state[f"show_quiz_{task['id']}"] = False
