@@ -28,18 +28,13 @@ class StudentProfileManager:
             default_profile = {
                 "student_id": f"student_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
                 "created_at": datetime.now().isoformat(),
-                "last_active": datetime.now().isoformat(),
-                "current_state": {
-                    "current_day": 1,
-                    "current_topic_id": None,
-                    "active_plan_id": None
-                },
                 "study_plan": {
                     "plan_id": None,
-                    "created_at": None,
-                    "num_days": 0,
-                    "topics": []
+                    "topics": [],
+                    "num_days": 0
                 },
+                "current_study_day": 1,
+                "last_access_date": datetime.now().strftime("%Y-%m-%d"),
                 "quiz_history": [],
                 "mastery_tracker": {},
                 "time_tracking": {

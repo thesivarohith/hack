@@ -228,15 +228,30 @@ class SaveProgressRequest(BaseModel):
     plan_id: Optional[str]
 
 @app.post("/student/save_progress")
-def save_progress(request: SaveProgressRequest):
-    """Save current study progress"""
+def save_progress(request: dict):
+    """Save current study state"""
     try:
-        profile_manager.update_current_state(
-            request.current_day,
-            request.current_topic_id,
-            request.plan_id
-        )
-        return {"status": "saved"}
+        profile = profile_manager.load_profile()
+        
+        # Update current study day if provided
+        if "current_study_day" in request:
+            profile["current_study_day"] = request["current_study_day"]
+        
+        # Update last access date if provided
+        if "last_access_date" in request:
+            profile["last_access_date"] = request["last_access_date"]
+        
+        # Legacy support for current_day and current_topic_id
+        if "current_day" in request:
+            profile["current_study_day"] = request["current_day"]
+        if "current_topic_id" in request:
+            profile.setdefault("current_topic_id", request["current_topic_id"])
+        if "plan_id" in request:
+            if "study_plan" in profile:
+                profile["study_plan"]["plan_id"] = request["plan_id"]
+        
+        profile_manager.save_profile(profile)
+        return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -359,6 +359,45 @@ if "profile_loaded" not in st.session_state:
             if profile.get("mastery_tracker"):
                 st.session_state.mastery_data = profile["mastery_tracker"]
             
+            # ========== DATE-AWARE DAY PROGRESSION ==========
+            from datetime import date
+            today = date.today()
+            today_str = today.strftime("%Y-%m-%d")
+            
+            # Get stored current day and last access date
+            current_study_day = profile.get("current_study_day", 1)
+            last_access_date = profile.get("last_access_date", today_str)
+            
+            # Check if it's a new calendar day
+            if last_access_date != today_str and st.session_state.study_plan:
+                # Calculate how many days have passed
+                from datetime import datetime
+                last_date_obj = datetime.strptime(last_access_date, "%Y-%m-%d").date()
+                days_passed = (today - last_date_obj).days
+                
+                if days_passed > 0:
+                    # Advance to next day
+                    current_study_day += days_passed
+                    max_day = max([t.get("day", 1) for t in st.session_state.study_plan]) if st.session_state.study_plan else 1
+                    current_study_day = min(current_study_day, max_day)  # Cap at max day
+                    
+                    # Auto-unlock topics for the new day
+                    for topic in st.session_state.study_plan:
+                        if topic.get("day") == current_study_day and topic.get("status") != "completed":
+                            topic["status"] = "unlocked"
+                    
+                    # Update profile with new day and date
+                    try:
+                        requests.post(f"{API_URL}/student/save_progress", json={
+                            "current_study_day": current_study_day,
+                            "last_access_date": today_str
+                        }, timeout=5)
+                        st.toast(f"📅 Advanced to Day {current_study_day}! New topics unlocked", icon="🎯")
+                    except:
+                        pass
+            
+            # Store current day in session state
+            st.session_state.current_study_day = current_study_day
 
         else:
             st.session_state.study_plan = []
@@ -370,6 +409,10 @@ else:
     # Ensure study_plan exists even if profile load was skipped
     if "study_plan" not in st.session_state:
         st.session_state.study_plan = []
+    # Default to day 1 if no profile loaded
+    if "current_study_day" not in st.session_state:
+        st.session_state.current_study_day = 1
+
 
 def check_internet():
     """
@@ -1251,11 +1294,12 @@ if right_col:
                     except Exception as e:
                         st.error(f"Error: {e}")
 
-        # --- TODAY'S TOPICS (FILTERED) ---
-        st.markdown("### Today's Topics")
+        # --- TODAY'S TOPICS (FILTERED BY CURRENT STUDY DAY) ---
+        current_day = st.session_state.get("current_study_day", 1)
+        st.markdown(f"### Today's Topics (Day {current_day})")
         
-        # FILTER: Only show Day 1 tasks for "Today"
-        todays_tasks = [t for t in st.session_state.study_plan if t.get("day") == 1]
+        # FILTER: Show tasks for current study day
+        todays_tasks = [t for t in st.session_state.study_plan if t.get("day") == current_day]
 
         if not todays_tasks:
             st.caption("No tasks for today. Ask the calendar to make a plan!")
@@ -1263,6 +1307,7 @@ if right_col:
             # Group tasks by subject if multiple topics per day
             if len(todays_tasks) > 1:
                 st.caption(f"📚 {len(todays_tasks)} topics to cover today")
+
 
         for i, task in enumerate(todays_tasks):
             # Display subject badge if available
