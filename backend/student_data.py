@@ -188,6 +188,10 @@ class StudentProfileManager:
             "num_days": num_days,
             "topics": topics
         }
+        
+        # Ensure current_state exists
+        if "current_state" not in profile:
+            profile["current_state"] = {}
         profile["current_state"]["active_plan_id"] = plan_id
         
         self.save_profile(profile)
