@@ -24,6 +24,9 @@ EXPOSE 8501 8000
 # Set environment to use Hugging Face
 ENV LLM_PROVIDER=huggingface
 
+# Enable Supabase for persistent storage
+ENV USE_SUPABASE=true
+
 # Create startup script
 RUN echo '#!/bin/bash\n\
     # Start FastAPI backend in background\n\

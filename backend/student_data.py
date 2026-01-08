@@ -1,5 +1,6 @@
 """
 Student Profile Manager - Handles persistent storage of student learning data
+Supports both local JSON files and cloud Supabase storage.
 """
 import json
 import os
@@ -8,16 +9,45 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 import threading
+import logging
+
+logger = logging.getLogger(__name__)
 
 class StudentProfileManager:
-    """Manages student profile data with JSON file persistence"""
+    """Manages student profile data with JSON file or Supabase persistence"""
     
     def __init__(self):
+        # Check if Supabase should be used
+        self.use_supabase = os.getenv("USE_SUPABASE", "false").lower() == "true"
+        
+        if self.use_supabase:
+            try:
+                from backend.supabase_storage import SupabaseStorage
+                self.supabase = SupabaseStorage()
+                if self.supabase.is_available():
+                    logger.info("Using Supabase for persistent storage")
+                    self.storage_mode = "supabase"
+                else:
+                    logger.warning("Supabase not available, falling back to local storage")
+                    self.use_supabase = False
+                    self.storage_mode = "local"
+            except Exception as e:
+                logger.error(f"Failed to initialize Supabase: {e}")
+                self.use_supabase = False
+                self.storage_mode = "local"
+        else:
+            self.storage_mode = "local"
+            logger.info("Using local JSON file storage")
+        
+        # Local storage setup (always available as fallback)
         self.profile_dir = Path.home() / ".focusflow"
         self.profile_file = self.profile_dir / "student_profile.json"
         self.backup_file = self.profile_dir / "student_profile.backup.json"
         self.lock = threading.Lock()
-        self._ensure_profile_exists()
+        self.student_id = f"student_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        
+        if not self.use_supabase:
+            self._ensure_profile_exists()
     
     def _ensure_profile_exists(self):
         """Create profile directory and file if not exists"""
@@ -67,28 +97,75 @@ class StudentProfileManager:
             raise
     
     def load_profile(self) -> dict:
-        """Load student profile from disk"""
+        """Load student profile from Supabase or local disk"""
         with self.lock:
-            try:
-                with open(self.profile_file, 'r') as f:
-                    profile = json.load(f)
-                
-                # Update last active
-                profile["last_active"] = datetime.now().isoformat()
-                self._save_to_file(profile)
-                
-                return profile
-            except Exception as e:
-
-                # Return default profile
-                self._ensure_profile_exists()
-                return self.load_profile()
+            if self.use_supabase:
+                try:
+                    profile = self.supabase.load_profile(self.student_id)
+                    if profile:
+                        return profile
+                    else:
+                        # Create default profile for new user
+                        default_profile = self._get_default_profile()
+                        self.supabase.save_profile(self.student_id, default_profile)
+                        return default_profile
+                except Exception as e:
+                    logger.error(f"Error loading from Supabase: {e}")
+                    return self._get_default_profile()
+            else:
+                # Local JSON storage
+                try:
+                    with open(self.profile_file, 'r') as f:
+                        profile = json.load(f)
+                    
+                    # Update last active
+                    profile["last_active"] = datetime.now().isoformat()
+                    self._save_to_file(profile)
+                    
+                    return profile
+                except Exception as e:
+                    logger.error(f"Error loading from file: {e}")
+                    # Return default profile
+                    self._ensure_profile_exists()
+                    return self.load_profile()
+    
     
     def save_profile(self, profile: dict):
-        """Save student profile to disk"""
+        """Save student profile to Supabase or local disk"""
         with self.lock:
             profile["last_active"] = datetime.now().isoformat()
-            self._save_to_file(profile)
+            
+            if self.use_supabase:
+                try:
+                    success = self.supabase.save_profile(self.student_id, profile)
+                    if not success:
+                        logger.warning("Failed to save to Supabase")
+                except Exception as e:
+                    logger.error(f"Error saving to Supabase: {e}")
+            else:
+                # Local JSON storage
+                self._save_to_file(profile)
+    
+    def _get_default_profile(self) -> dict:
+        """Get default profile structure"""
+        return {
+            "student_id": self.student_id,
+            "created_at": datetime.now().isoformat(),
+            "study_plan": {
+                "plan_id": None,
+                "topics": [],
+                "num_days": 0
+            },
+            "current_study_day": 1,
+            "last_access_date": datetime.now().strftime("%Y-%m-%d"),
+            "quiz_history": [],
+            "mastery_tracker": {},
+            "time_tracking": {
+                "total_study_time_minutes": 0,
+                "topics_time": {}
+            },
+            "incomplete_tasks": []
+        }
     
     def update_current_state(self, current_day: int, current_topic_id: Optional[int], plan_id: Optional[str]):
         """Update current position in study plan"""
