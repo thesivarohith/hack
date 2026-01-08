@@ -3,35 +3,9 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_community.llms import Ollama
-from backend.config import get_llm_provider, get_llm_config, LLMProvider, get_embeddings
+from backend.config import get_llm_provider, get_llm_config, LLMProvider, get_embeddings, get_llm
 
 CACHE_DIR = "./chroma_db"
-
-def get_llm():
-    """
-    Get LLM instance based on environment configuration.
-    Supports both local (Ollama) and cloud (Hugging Face) modes.
-    """
-    provider = get_llm_provider()
-    config = get_llm_config()
-    
-    if provider == LLMProvider.OLLAMA:
-        # Local mode - uses Ollama for offline inference
-        return Ollama(
-            model=config["model"],
-            base_url=config.get("base_url", "http://localhost:11434")
-        )
-    else:
-        # Cloud mode - uses Hugging Face Inference API
-        from langchain_huggingface import HuggingFaceEndpoint
-        return HuggingFaceEndpoint(
-            repo_id=config["model"],
-            huggingfacehub_api_token=config["api_token"],
-            max_length=config.get("max_length", 512),
-            temperature=config.get("temperature", 0.7),
-            task="text-generation"
-        )
-
 
 def ingest_document(file_path: str):
     """
