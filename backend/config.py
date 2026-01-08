@@ -64,15 +64,19 @@ def get_llm():
             base_url=config.get("base_url", "http://localhost:11434")
         )
     else:
-        # Cloud mode - uses Hugging Face Inference API
-        from langchain_huggingface import HuggingFaceEndpoint
-        return HuggingFaceEndpoint(
+        # Cloud mode - uses Hugging Face Inference API with Chat wrapper
+        from langchain_huggingface import ChatHuggingFace, HuggingFaceEndpoint
+        
+        # Create base endpoint
+        llm = HuggingFaceEndpoint(
             repo_id=config["model"],
             huggingfacehub_api_token=config["api_token"],
             max_new_tokens=512,
             temperature=config.get("temperature", 0.7)
-            # Removed task parameter - let HF auto-detect
         )
+        
+        # Wrap with ChatHuggingFace for chat-based models
+        return ChatHuggingFace(llm=llm)
 
 def get_embeddings():
     """
