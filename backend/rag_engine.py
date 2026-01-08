@@ -339,6 +339,12 @@ def query_knowledge_base(question: str, history: list = []):
     
     res = llm.invoke(prompt)
     
+    # Extract content if response is AIMessage
+    if hasattr(res, 'content'):
+        answer_text = res.content
+    else:
+        answer_text = str(res)
+    
     # Return source metadata
     sources_list = []
     for d in docs:
@@ -346,7 +352,7 @@ def query_knowledge_base(question: str, history: list = []):
         sources_list.append({"source": meta.get("source", "Unknown"), "page": meta.get("page", 1)})
         
     return {
-        "answer": res,
+        "answer": answer_text,
         "sources": sources_list
     }
 def generate_quiz_data(topic_title: str):
@@ -473,7 +479,14 @@ JSON:"""
     
     try:
         response = llm.invoke(prompt)
-        clean_json = response.replace("```json", "").replace("```", "").strip()
+        
+        # Extract content if response is AIMessage
+        if hasattr(response, 'content'):
+            response_text = response.content
+        else:
+            response_text = str(response)
+        
+        clean_json = response_text.replace("```json", "").replace("```", "").strip()
         import json
         quiz_data = json.loads(clean_json)
         
