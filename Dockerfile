@@ -26,15 +26,15 @@ ENV LLM_PROVIDER=huggingface
 
 # Create startup script
 RUN echo '#!/bin/bash\n\
-# Start FastAPI backend in background\n\
-uvicorn backend.main:app --host 0.0.0.0 --port 8000 &\n\
-\n\
-# Wait for backend to start\n\
-sleep 2\n\
-\n\
-# Start Streamlit frontend\n\
-streamlit run app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true\n\
-' > /app/start.sh && chmod +x /app/start.sh
+    # Start FastAPI backend in background\n\
+    uvicorn backend.main:app --host 0.0.0.0 --port 8000 &\n\
+    \n\
+    # Wait for backend to start\n\
+    sleep 2\n\
+    \n\
+    # Start Streamlit frontend\n\
+    streamlit run app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true\n\
+    ' > /app/start.sh && chmod +x /app/start.sh
 
 # Run startup script
 CMD ["/app/start.sh"]
