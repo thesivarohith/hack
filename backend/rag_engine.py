@@ -283,8 +283,15 @@ Markdown content:"""
     # 4. Generate
     try:
         response = llm.invoke(prompt)
+        
+        # Extract content if response is AIMessage (from ChatHuggingFace)
+        if hasattr(response, 'content'):
+            response_text = response.content
+        else:
+            response_text = str(response)
+        
         # Clean potential markdown wrappers
-        clean_text = response.replace("```markdown", "").replace("```", "").strip()
+        clean_text = response_text.replace("```markdown", "").replace("```", "").strip()
         
         # If response is too short, add a note
         if len(clean_text) < 200:
