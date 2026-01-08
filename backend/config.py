@@ -69,9 +69,9 @@ def get_llm():
         return HuggingFaceEndpoint(
             repo_id=config["model"],
             huggingfacehub_api_token=config["api_token"],
-            max_new_tokens=512,  # Changed from max_length
-            temperature=config.get("temperature", 0.7),
-            task="text-generation"
+            max_new_tokens=512,
+            temperature=config.get("temperature", 0.7)
+            # Removed task parameter - let HF auto-detect
         )
 
 def get_embeddings():
