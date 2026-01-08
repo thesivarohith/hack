@@ -2,9 +2,8 @@ import os
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
-from langchain_community.embeddings import OllamaEmbeddings
 from langchain_community.llms import Ollama
-from backend.config import get_llm_provider, get_llm_config, LLMProvider
+from backend.config import get_llm_provider, get_llm_config, LLMProvider, get_embeddings
 
 CACHE_DIR = "./chroma_db"
 
@@ -53,7 +52,7 @@ def ingest_document(file_path: str):
     # Note: Chroma will automatically persist to disk in newer versions when persist_directory is set
     Chroma.from_documents(
         documents=splits,
-        embedding=OllamaEmbeddings(model="nomic-embed-text"),
+        embedding=get_embeddings(),
         persist_directory=CACHE_DIR
     )
     # Ingestion successful
@@ -92,7 +91,7 @@ def ingest_url(url: str):
         # Store in ChromaDB
         Chroma.from_documents(
             documents=splits,
-            embedding=OllamaEmbeddings(model="nomic-embed-text"),
+            embedding=get_embeddings(),
             persist_directory=CACHE_DIR
         )
         
@@ -110,7 +109,7 @@ def delete_document(source_path: str):
     """
     vector_store = Chroma(
         persist_directory=CACHE_DIR,
-        embedding_function=OllamaEmbeddings(model="nomic-embed-text")
+        embedding_function=get_embeddings()
     )
     
     # Delete based on metadata 'source'
@@ -130,7 +129,7 @@ def generate_study_plan(user_request: str):
     # Initialize resources
     vector_store = Chroma(
         persist_directory=CACHE_DIR,
-        embedding_function=OllamaEmbeddings(model="nomic-embed-text")
+        embedding_function=get_embeddings()
     )
     llm = get_llm()
     
@@ -240,7 +239,7 @@ def generate_lesson_content(topic_title: str):
     # Initialize resources
     vector_store = Chroma(
         persist_directory=CACHE_DIR,
-        embedding_function=OllamaEmbeddings(model="nomic-embed-text")
+        embedding_function=get_embeddings()
     )
     llm = get_llm()
     
@@ -334,7 +333,7 @@ def query_knowledge_base(question: str, history: list = []):
     # Init
     vector_store = Chroma(
         persist_directory=CACHE_DIR,
-        embedding_function=OllamaEmbeddings(model="nomic-embed-text")
+        embedding_function=get_embeddings()
     )
     llm = get_llm()
     
@@ -375,7 +374,7 @@ def generate_quiz_data(topic_title: str):
     # Initialize resources
     vector_store = Chroma(
         persist_directory=CACHE_DIR,
-        embedding_function=OllamaEmbeddings(model="nomic-embed-text")
+        embedding_function=get_embeddings()
     )
     llm = get_llm()
 

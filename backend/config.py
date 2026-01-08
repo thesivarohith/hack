@@ -48,3 +48,21 @@ def is_local_mode():
 def is_cloud_mode():
     """Check if running in cloud (online demo) mode"""
     return get_llm_provider() == LLMProvider.HUGGINGFACE
+
+def get_embeddings():
+    """
+    Get embeddings model based on environment configuration.
+    Supports both local (Ollama) and cloud (Hugging Face) modes.
+    """
+    provider = get_llm_provider()
+    
+    if provider == LLMProvider.OLLAMA:
+        # Local mode - uses Ollama embeddings
+        from langchain_community.embeddings import OllamaEmbeddings
+        return OllamaEmbeddings(model="nomic-embed-text")
+    else:
+        # Cloud mode - uses Hugging Face embeddings
+        from langchain_huggingface import HuggingFaceEmbeddings
+        return HuggingFaceEmbeddings(
+            model_name="sentence-transformers/all-MiniLM-L6-v2"
+        )
