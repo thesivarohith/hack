@@ -1,0 +1,578 @@
+{
+    "project_overview": {
+        "name": "FocusFlow",
+        "tagline": "AI-powered study companion that transforms PDFs into personalized, adaptive learning experiences",
+        "problem_solved": "Students struggle to create structured study plans and get meaningful answers from study materials without manual effort",
+        "target_users": [
+            "Self-learners studying from PDFs/documents",
+            "Students preparing for exams",
+            "Professionals upskilling with technical documentation",
+            "Anyone needing structured learning from unstructured content"
+        ],
+        "github": "https://github.com/thesivarohith/hack",
+        "live_demo": "https://huggingface.co/spaces/SivaRohith69/focusflow"
+    },
+    "core_features": {
+        "implemented": [
+            {
+                "name": "PDF Upload & Ingestion",
+                "description": "Upload PDFs, automatically extract and chunk content into vector database",
+                "status": "✅ Fully Working"
+            },
+            {
+                "name": "Auto Study Plan Generation",
+                "description": "AI generates multi-day structured study plans from uploaded content",
+                "status": "✅ Fully Working"
+            },
+            {
+                "name": "RAG-Powered Q&A",
+                "description": "Ask questions and get contextual answers with exact source citations",
+                "status": "✅ Fully Working"
+            },
+            {
+                "name": "Adaptive Quizzes",
+                "description": "Auto-generated quizzes that adapt based on your performance",
+                "status": "✅ Fully Working"
+            },
+            {
+                "name": "Progress Tracking",
+                "description": "Track quiz scores, mastery levels, and study time per topic",
+                "status": "✅ Fully Working"
+            },
+            {
+                "name": "Smart Day Progression",
+                "description": "Topics unlock automatically based on date and completion status",
+                "status": "✅ Fully Working"
+            },
+            {
+                "name": "Pomodoro Timer",
+                "description": "Built-in focus timer with visual countdown",
+                "status": "✅ Fully Working"
+            },
+            {
+                "name": "Interactive Calendar",
+                "description": "Visual calendar showing study schedule and plan generation",
+                "status": "✅ Fully Working"
+            },
+            {
+                "name": "Multi-User Support",
+                "description": "Session-based isolation - each browser tab maintains separate user data",
+                "status": "✅ Fully Working"
+            },
+            {
+                "name": "Cloud Persistence",
+                "description": "Study plans and progress persist across page reloads via Supabase",
+                "status": "✅ Fully Working (Cloud only)"
+            },
+            {
+                "name": "Material Design UI",
+                "description": "Modern, responsive interface with smooth animations and glassmorphism",
+                "status": "✅ Fully Working"
+            }
+        ]
+    },
+    "tech_stack": {
+        "frontend": {
+            "framework": "Streamlit 1.30.0+",
+            "ui_components": [
+                "streamlit-calendar 0.6.0+ (Interactive calendar)",
+                "Custom Material Design CSS",
+                "Plotly 5.18.0+ (Analytics charts)"
+            ],
+            "styling": "Custom CSS with Material Design principles, glassmorphism effects"
+        },
+        "backend": {
+            "framework": "FastAPI 0.109.0+",
+            "server": "Uvicorn (ASGI server)",
+            "ai_framework": "LangChain 0.0.200+",
+            "components": [
+                "langchain-community (Document loaders, embeddings)",
+                "langchain-chroma (Vector store integration)",
+                "langchain-huggingface (HF model integration)"
+            ]
+        },
+        "ai_ml_models": {
+            "local_deployment": {
+                "llm": {
+                    "name": "llama3.2:1b",
+                    "provider": "Ollama",
+                    "purpose": "Text generation, Q&A, quiz generation",
+                    "offline": true
+                },
+                "embeddings": {
+                    "name": "nomic-embed-text",
+                    "provider": "Ollama",
+                    "purpose": "Semantic search, RAG retrieval",
+                    "offline": true
+                }
+            },
+            "cloud_deployment": {
+                "llm": {
+                    "name": "meta-llama/Meta-Llama-3-8B-Instruct",
+                    "provider": "Hugging Face Inference API",
+                    "purpose": "Text generation, Q&A, quiz generation",
+                    "wrapper": "ChatHuggingFace (for conversational models)"
+                },
+                "embeddings": {
+                    "name": "sentence-transformers/all-MiniLM-L6-v2",
+                    "provider": "HuggingFace Embeddings",
+                    "library": "sentence-transformers 2.2.0+",
+                    "purpose": "Semantic search, RAG retrieval"
+                }
+            }
+        },
+        "databases": {
+            "vector_db": {
+                "name": "ChromaDB 0.4.0+",
+                "purpose": "Stores document embeddings for semantic search",
+                "persistence": "Local disk (./chroma_db)"
+            },
+            "relational_db": {
+                "name": "SQLite",
+                "purpose": "Stores sources, schedules, mastery data (via SQLAlchemy)",
+                "file": "data/focusflow.db"
+            },
+            "cloud_db": {
+                "name": "Supabase PostgreSQL",
+                "purpose": "Cloud persistence for user profiles and study plans",
+                "table": "student_profiles (JSONB storage)",
+                "only_for": "Cloud deployment"
+            }
+        },
+        "deployment": {
+            "local": {
+                "requirements": [
+                    "Python 3.10+",
+                    "Ollama (for LLM)",
+                    "8GB+ RAM"
+                ],
+                "ports": {
+                    "backend": 8000,
+                    "frontend": 8501
+                }
+            },
+            "cloud": {
+                "platform": "Hugging Face Spaces",
+                "container": "Docker (python:3.10-slim base)",
+                "tier": "Free (CPU Basic)",
+                "secrets_required": [
+                    "HUGGINGFACE_API_TOKEN",
+                    "SUPABASE_URL",
+                    "SUPABASE_KEY"
+                ]
+            }
+        }
+    },
+    "architecture_components": {
+        "control_center": {
+            "location": "Left sidebar",
+            "sub_components": {
+                "study_timer": "Pomodoro timer with minutes:seconds display",
+                "sources_panel": "Shows uploaded PDFs with delete option",
+                "upload_buttons": "PDF upload and URL/YouTube ingestion"
+            }
+        },
+        "intelligent_workspace": {
+            "location": "Center panel",
+            "modes": [
+                {
+                    "name": "Welcome Screen",
+                    "purpose": "Initial state, prompts to upload content"
+                },
+                {
+                    "name": "Lesson View",
+                    "purpose": "Displays auto-generated lesson content in Markdown"
+                },
+                {
+                    "name": "Chat Mode",
+                    "purpose": "RAG-powered Q&A with source citations"
+                },
+                {
+                    "name": "Quiz Mode",
+                    "purpose": "Multiple-choice questions with instant feedback"
+                }
+            ]
+        },
+        "calendar_sidebar": {
+            "location": "Right sidebar",
+            "sub_components": {
+                "calendar_widget": "Interactive calendar, accepts natural language plan requests",
+                "plan_display": "Shows generated plan with day/topic breakdown",
+                "todays_topics": "Shows unlocked topics for current day with 'Start Learning' buttons"
+            }
+        },
+        "analytics_panel": {
+            "location": "Toggleable overlay",
+            "displays": [
+                "Subject mastery radar chart",
+                "Quiz history line chart",
+                "Total study time",
+                "Topics completed count"
+            ]
+        }
+    },
+    "key_workflows": {
+        "pdf_upload_workflow": {
+            "steps": [
+                "User clicks 'Add PDF / Document' in Sources panel",
+                "Uploads PDF file (max 250MB)",
+                "Backend receives file at /upload endpoint",
+                "PyPDFLoader extracts text from PDF",
+                "RecursiveCharacterTextSplitter chunks text (1000 chars, 200 overlap)",
+                "Embeddings generated for each chunk",
+                "Chunks stored in ChromaDB with metadata (source, page number)",
+                "Source added to SQLite database",
+                "UI updates to show source in list"
+            ],
+            "api_endpoint": "POST /upload",
+            "dependencies": [
+                "pypdf 3.17.0+",
+                "ChromaDB",
+                "Embeddings model"
+            ]
+        },
+        "study_plan_generation": {
+            "steps": [
+                "User types request in calendar (e.g., 'Make a 5-day plan')",
+                "Clicks 'Generate Plan' button",
+                "Request sent to POST /generate_plan with text",
+                "Backend queries ChromaDB for all document chunks",
+                "LLM generates structured plan JSON with {day, topic, status, subject} fields",
+                "Backend validates and post-processes plan",
+                "Plan saved to profile via POST /student/save_plan",
+                "Stored in Supabase (cloud) or local JSON",
+                "UI updates calendar and Today's Topics",
+                "Day 1 topics automatically unlocked"
+            ],
+            "api_endpoint": "POST /generate_plan",
+            "storage": {
+                "cloud": "Supabase student_profiles.profile_data.study_plan",
+                "local": "~/.focusflow/student_profile.json"
+            }
+        },
+        "rag_qa_workflow": {
+            "steps": [
+                "User types question in chat input",
+                "Frontend sends POST /query with {question, history}",
+                "Backend performs similarity search in ChromaDB (k=4 chunks)",
+                "Retrieved chunks sent to LLM with question as prompt",
+                "LLM generates answer based on context",
+                "Response extracted from AIMessage object",
+                "Source metadata appended (filename, page number)",
+                "Answer returned with citations",
+                "UI displays answer with clickable source links"
+            ],
+            "api_endpoint": "POST /query",
+            "retrieval_settings": {
+                "top_k_chunks": 4,
+                "chunk_size": 1000,
+                "overlap": 200
+            }
+        },
+        "quiz_workflow": {
+            "steps": [
+                "User clicks 'Start Learning' on a topic",
+                "Lesson generated and displayed",
+                "User clicks 'Take Quiz' button",
+                "POST /generate_quiz with topic title",
+                "Backend retrieves relevant chunks from ChromaDB (k=6)",
+                "LLM generates 3 multiple-choice questions in JSON",
+                "Quiz rendered with radio buttons",
+                "User selects answers and clicks Submit",
+                "Score calculated and sent to POST /student/quiz_complete",
+                "Quiz record added to profile.quiz_history",
+                "Mastery level updated based on percentage",
+                "If passed (≥70%), topic marked complete and next unlocked"
+            ],
+            "api_endpoints": [
+                "POST /generate_quiz",
+                "POST /student/quiz_complete"
+            ],
+            "passing_score": "70%",
+            "questions_per_quiz": 3
+        },
+        "mastery_tracking": {
+            "calculation": "Exponential weighted average: new_mastery = (1-α)*old + α*score, where α=0.3",
+            "storage": "profile.mastery_tracker[subject]",
+            "display": "Radar chart in Analytics panel",
+            "subjects": "Extracted from study plan topics"
+        }
+    },
+    "deployment_modes": {
+        "local": {
+            "technologies": [
+                "Python 3.10+",
+                "Ollama (llama3.2:1b + nomic-embed-text)",
+                "SQLite",
+                "ChromaDB (persisted to ./chroma_db)",
+                "JSON files (~/.focusflow/student_profile.json)"
+            ],
+            "how_it_works": "Fully offline. All processing happens locally. No internet needed after models are downloaded. Single-user only.",
+            "data_location": "All data stays on user's machine",
+            "startup_commands": [
+                "ollama serve (in background)",
+                "uvicorn backend.main:app --reload",
+                "streamlit run app.py"
+            ],
+            "advantages": [
+                "Fully private - no data leaves your machine",
+                "Works offline",
+                "No API costs",
+                "Faster for small datasets"
+            ],
+            "limitations": [
+                "Requires powerful hardware (8GB+ RAM)",
+                "Single user only",
+                "Manual setup required"
+            ]
+        },
+        "cloud_hf_spaces": {
+            "technologies": [
+                "Docker container (python:3.10-slim)",
+                "HuggingFace Inference API (Llama-3-8B)",
+                "Supabase PostgreSQL",
+                "ChromaDB (ephemeral, resets on reload)",
+                "Streamlit + FastAPI in same container"
+            ],
+            "how_it_works": "Docker container starts both backend (uvicorn) and frontend (streamlit). Backend checks health endpoint before frontend starts. Each browser session gets unique student_id. Data persists to Supabase.",
+            "environment_variables": {
+                "LLM_PROVIDER": "huggingface",
+                "USE_SUPABASE": "true",
+                "HUGGINGFACE_API_TOKEN": "Required for LLM access",
+                "SUPABASE_URL": "Required for data persistence",
+                "SUPABASE_KEY": "Required for data persistence"
+            },
+            "startup_script": "/app/start.sh (starts uvicorn, waits for health, starts streamlit)",
+            "advantages": [
+                "No setup required - just click link",
+                "Accessible anywhere",
+                "Multi-user support",
+                "Data persists across sessions"
+            ],
+            "limitations": [
+                "Data stored in cloud (privacy concern)",
+                "Requires internet",
+                "Free tier has rate limits",
+                "ChromaDB resets on container restart (only first ingestion works)"
+            ]
+        },
+        "key_differences": {
+            "data_persistence": {
+                "local": "JSON files + SQLite (permanent)",
+                "cloud": "Supabase (permanent) + ChromaDB (ephemeral)"
+            },
+            "llm_provider": {
+                "local": "Ollama (offline)",
+                "cloud": "HuggingFace Inference API (online)"
+            },
+            "multi_user": {
+                "local": "No - single profile",
+                "cloud": "Yes - session-based student_id"
+            },
+            "privacy": {
+                "local": "100% private",
+                "cloud": "Data in Supabase, PDFs processed in-memory"
+            }
+        }
+    },
+    "data_flow": {
+        "document_ingestion": [
+            "PDF uploaded → FastAPI /upload",
+            "PDF text extracted → chunks created",
+            "Chunks embedded → stored in ChromaDB",
+            "Source metadata → stored in SQLite"
+        ],
+        "query_processing": [
+            "User question → Streamlit frontend",
+            "Question → FastAPI /query",
+            "Semantic search → ChromaDB retrieves top chunks",
+            "Chunks + question → LLM generates answer",
+            "Answer + sources → returned to frontend"
+        ],
+        "profile_persistence": {
+            "cloud": [
+                "Action (plan generated, quiz completed) → Streamlit",
+                "API call with X-Student-Id header → FastAPI",
+                "StudentProfileManager(student_id) instantiated",
+                "Profile loaded from Supabase → modified → saved back",
+                "Data stored in student_profiles.profile_data JSONB"
+            ],
+            "local": [
+                "Action → StudentProfileManager",
+                "Profile loaded from JSON file → modified → saved",
+                "Atomic write with backup to ~/.focusflow/"
+            ]
+        },
+        "privacy_measures": [
+            "PDFs never stored permanently (processed in-memory)",
+            "Local mode: zero data sent to internet",
+            "Cloud mode: only study plan metadata stored in Supabase",
+            "Each user session isolated (unique student_id)",
+            "Supabase RLS policies can be added for extra security"
+        ]
+    },
+    "current_status": {
+        "fully_working": [
+            "PDF upload and RAG ingestion",
+            "Study plan generation from PDFs",
+            "Multi-day plan with topic unlocking",
+            "RAG-powered Q&A with citations",
+            "Auto-generated quizzes",
+            "Quiz scoring and mastery tracking",
+            "Progress analytics dashboard",
+            "Pomodoro timer",
+            "Interactive calendar",
+            "Multi-user session isolation",
+            "Supabase persistence (cloud)",
+            "Health check endpoint",
+            "Material Design UI",
+            "Both local and cloud deployments"
+        ],
+        "known_limitations": [
+            {
+                "issue": "ChromaDB ephemeral on HF Spaces",
+                "impact": "PDFs must be re-uploaded after container restart",
+                "workaround": "Use local deployment for permanent RAG storage",
+                "priority": "Medium"
+            },
+            {
+                "issue": "Frontend doesn't send X-Student-Id header yet",
+                "impact": "All cloud users currently share same profile",
+                "fix_required": "Update all API calls in app.py to use get_headers()",
+                "priority": "High"
+            },
+            {
+                "issue": "No user authentication",
+                "impact": "Anyone with link can access demo",
+                "workaround": "Acceptable for demo, not production",
+                "priority": "Low (demo only)"
+            },
+            {
+                "issue": "HF Inference API rate limits",
+                "impact": "Heavy usage may hit limits on free tier",
+                "workaround": "Use local deployment",
+                "priority": "Low"
+            }
+        ]
+    },
+    "unique_features": {
+        "innovations": [
+            {
+                "feature": "Hybrid Local/Cloud Architecture",
+                "description": "Same codebase works offline (Ollama) or cloud (HF API) via config",
+                "differentiator": "Most apps are cloud-only or local-only"
+            },
+            {
+                "feature": "Context-Aware Auto-Planning",
+                "description": "AI reads your PDFs and creates multi-day plans automatically",
+                "differentiator": "Most apps require manual planning"
+            },
+            {
+                "feature": "Session-Based Multi-User",
+                "description": "No login required - each browser tab is a separate user",
+                "differentiator": "Simplifies demo usage while maintaining isolation"
+            },
+            {
+                "feature": "RAG with Exact Citations",
+                "description": "Every answer cites exact source filename and page number",
+                "differentiator": "Many RAG apps don't show sources"
+            },
+            {
+                "feature": "Adaptive Topic Unlocking",
+                "description": "Topics unlock based on quiz scores AND date progression",
+                "differentiator": "Combines gamification with realistic scheduling"
+            },
+            {
+                "feature": "Material Design Study UI",
+                "description": "Professional UI with glassmorphism, animations, radar charts",
+                "differentiator": "Most study apps have basic UIs"
+            }
+        ]
+    },
+    "setup_instructions": {
+        "local_setup": {
+            "prerequisites": [
+                "Python 3.10 or higher",
+                "Ollama installed (https://ollama.ai)",
+                "8GB+ RAM",
+                "Git"
+            ],
+            "steps": [
+                "git clone https://github.com/thesivarohith/hack.git",
+                "cd hack",
+                "python -m venv venv",
+                "source venv/bin/activate (Windows: venv\\Scripts\\activate)",
+                "pip install -r requirements.txt",
+                "ollama pull llama3.2:1b",
+                "ollama pull nomic-embed-text",
+                "uvicorn backend.main:app --reload &",
+                "streamlit run app.py",
+                "Open http://localhost:8501"
+            ],
+            "no_credentials_needed": true
+        },
+        "cloud_setup": {
+            "platform": "Hugging Face Spaces",
+            "prerequisites": {
+                "accounts_needed": [
+                    "Hugging Face account (free)",
+                    "Supabase account (free)"
+                ],
+                "tokens_needed": [
+                    "HuggingFace API token (from hf.co/settings/tokens)",
+                    "Supabase URL (from project settings)",
+                    "Supabase anon/service key (from project API settings)"
+                ]
+            },
+            "steps": [
+                "Fork repository to your GitHub",
+                "Create Supabase project",
+                "Run SQL: CREATE TABLE student_profiles (id UUID PRIMARY KEY, student_id TEXT UNIQUE, profile_data JSONB, created_at TIMESTAMPTZ, updated_at TIMESTAMPTZ); CREATE INDEX idx_student_id ON student_profiles(student_id);",
+                "Go to HuggingFace Spaces → New Space",
+                "Link GitHub repo (or upload files)",
+                "Go to Settings → Variables",
+                "Add secrets: HUGGINGFACE_API_TOKEN, SUPABASE_URL, SUPABASE_KEY",
+                "Wait for build (~10-15 minutes)",
+                "Access at https://huggingface.co/spaces/YOUR_USERNAME/focusflow"
+            ],
+            "optional_customization": [
+                "Change LLM model in backend/config.py",
+                "Adjust chunk size in backend/rag_engine.py",
+                "Customize UI colors in app.py CSS"
+            ]
+        }
+    },
+    "future_enhancements": {
+        "planned": [
+            "Fix X-Student-Id header injection in all frontend API calls",
+            "Persistent ChromaDB on HF Spaces (mount external volume)",
+            "User authentication with OAuth",
+            "PDF annotation support",
+            "Spaced repetition algorithm",
+            "Collaborative study rooms",
+            "Mobile-responsive design improvements",
+            "Export study plans to PDF/Calendar"
+        ]
+    },
+    "file_structure": {
+        "key_files": {
+            "app.py": "Streamlit frontend - 1457 lines - UI, calendar, chat, quiz",
+            "backend/main.py": "FastAPI backend - 335 lines - all API endpoints",
+            "backend/rag_engine.py": "RAG logic - 492 lines - ingestion, query, quiz gen",
+            "backend/student_data.py": "Profile manager - 315 lines - Supabase/JSON persistence",
+            "backend/config.py": "Config system - 94 lines - LLM provider switching",
+            "backend/supabase_storage.py": "Supabase adapter - 139 lines - cloud DB operations",
+            "Dockerfile": "Container config - 44 lines - multi-service startup",
+            "requirements.txt": "Dependencies - 25 packages"
+        }
+    },
+    "metrics": {
+        "total_lines_of_code": "~3000+ lines (Python)",
+        "files": "~30 files",
+        "dependencies": 25,
+        "api_endpoints": 15,
+        "supported_features": 11,
+        "deployment_targets": 2,
+        "llm_models_supported": 4
+    }
+}
