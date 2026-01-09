@@ -320,6 +320,16 @@ if "expanded_topics" not in st.session_state: st.session_state.expanded_topics =
 if "show_analytics" not in st.session_state: st.session_state.show_analytics = False
 if "topic_scores" not in st.session_state: st.session_state.topic_scores = {}  # Track quiz performance by topic_id
 
+# Generate unique student ID per browser session (for multi-user support)
+if "student_id" not in st.session_state:
+    import uuid
+    st.session_state.student_id = f"student_{uuid.uuid4().hex[:12]}"
+
+# Helper function to add student_id header to all API requests
+def get_headers():
+    """Get headers with student_id for multi-user support"""
+    return {"X-Student-Id": st.session_state.student_id}
+
 # Focus Mode State
 if "focus_mode" not in st.session_state: st.session_state.focus_mode = False
 if "active_topic" not in st.session_state: st.session_state.active_topic = None

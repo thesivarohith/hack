@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, UploadFile, File, HTTPException
+from fastapi import FastAPI, Depends, UploadFile, File, HTTPException, Header
 from sqlalchemy.orm import Session
 from backend.database import SessionLocal, engine, Source, Schedule, Mastery, init_db
 from backend.rag_engine import ingest_document, query_knowledge_base
@@ -7,12 +7,10 @@ import shutil
 import os
 from pydantic import BaseModel
 from typing import List, Optional, Dict
+import uuid
 
 # Create tables
 init_db()
-
-# Initialize Student Profile Manager
-profile_manager = StudentProfileManager()
 
 app = FastAPI(title="FocusFlow Backend")
 
@@ -23,6 +21,13 @@ def get_db():
         yield db
     finally:
         db.close()
+
+# Get student profile manager per session
+def get_profile_manager(x_student_id: Optional[str] = Header(None)) -> StudentProfileManager:
+    """Get profile manager with session-specific student ID"""
+    # Use provided student_id from header, or generate a temporary one
+    student_id = x_student_id if x_student_id else f"temp_{uuid.uuid4().hex[:12]}"
+    return StudentProfileManager(student_id=student_id)
 
 # Pydantic Models
 class ScheduleItem(BaseModel):
@@ -214,7 +219,7 @@ def generate_quiz_endpoint(request: QuizRequest):
 # ========== STUDENT PROFILE ENDPOINTS ==========
 
 @app.get("/student/profile")
-def get_student_profile():
+def get_student_profile(profile_manager: StudentProfileManager = Depends(get_profile_manager)):
     """Load student profile"""
     try:
         profile = profile_manager.load_profile()
@@ -228,7 +233,7 @@ class SaveProgressRequest(BaseModel):
     plan_id: Optional[str]
 
 @app.post("/student/save_progress")
-def save_progress(request: dict):
+def save_progress(request: dict, profile_manager: StudentProfileManager = Depends(get_profile_manager)):
     """Save current study state"""
     try:
         profile = profile_manager.load_profile()
@@ -260,7 +265,7 @@ class SavePlanRequest(BaseModel):
     num_days: int
 
 @app.post("/student/save_plan")
-def save_study_plan(request: SavePlanRequest):
+def save_study_plan(request: SavePlanRequest, profile_manager: StudentProfileManager = Depends(get_profile_manager)):
     """Save generated study plan"""
     try:
         plan_id = profile_manager.save_study_plan(request.topics, request.num_days)
@@ -277,7 +282,7 @@ class QuizCompleteRequest(BaseModel):
     time_taken: int = 0
 
 @app.post("/student/quiz_complete")
-def record_quiz(request: QuizCompleteRequest):
+def record_quiz(request: QuizCompleteRequest, profile_manager: StudentProfileManager = Depends(get_profile_manager)):
     """Record quiz completion"""
     try:
         profile_manager.update_quiz_score(
@@ -294,7 +299,7 @@ def record_quiz(request: QuizCompleteRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/student/mastery")
-def get_mastery_data():
+def get_mastery_data(profile_manager: StudentProfileManager = Depends(get_profile_manager)):
     """Get subject mastery data"""
     try:
         mastery = profile_manager.get_mastery_data()
@@ -308,7 +313,7 @@ class IncompleteTaskRequest(BaseModel):
     reason: str = "not_completed"
 
 @app.post("/student/incomplete_task")
-def add_incomplete_task(request: IncompleteTaskRequest):
+def add_incomplete_task(request: IncompleteTaskRequest, profile_manager: StudentProfileManager = Depends(get_profile_manager)):
     """Mark a task as incomplete"""
     try:
         profile_manager.add_incomplete_task(
@@ -321,7 +326,7 @@ def add_incomplete_task(request: IncompleteTaskRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/student/incomplete_tasks/{current_day}")
-def get_incomplete_tasks(current_day: int):
+def get_incomplete_tasks(current_day: int, profile_manager: StudentProfileManager = Depends(get_profile_manager)):
     """Get incomplete tasks from previous days"""
     try:
         tasks = profile_manager.get_incomplete_tasks(current_day)

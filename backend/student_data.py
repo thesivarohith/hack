@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class StudentProfileManager:
     """Manages student profile data with JSON file or Supabase persistence"""
     
-    def __init__(self):
+    def __init__(self, student_id: Optional[str] = None):
         # Check if Supabase should be used
         self.use_supabase = os.getenv("USE_SUPABASE", "false").lower() == "true"
         
@@ -39,12 +39,21 @@ class StudentProfileManager:
             self.storage_mode = "local"
             logger.info("Using local JSON file storage")
         
+        # Generate unique student ID per user session
+        if student_id:
+            self.student_id = student_id
+        else:
+            # Generate unique ID if not provided (fallback for local mode)
+            import uuid
+            self.student_id = f"student_{uuid.uuid4().hex[:12]}"
+        
+        logger.info(f"StudentProfileManager initialized for {self.student_id}")
+        
         # Local storage setup (always available as fallback)
         self.profile_dir = Path.home() / ".focusflow"
         self.profile_file = self.profile_dir / "student_profile.json"
         self.backup_file = self.profile_dir / "student_profile.backup.json"
         self.lock = threading.Lock()
-        self.student_id = f"student_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         
         if not self.use_supabase:
             self._ensure_profile_exists()
