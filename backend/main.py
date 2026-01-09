@@ -14,6 +14,12 @@ init_db()
 
 app = FastAPI(title="FocusFlow Backend")
 
+# Health check endpoint for container startup
+@app.get("/health")
+def health_check():
+    """Health check endpoint"""
+    return {"status": "healthy"}
+
 # Dependency
 def get_db():
     db = SessionLocal()
