@@ -9,6 +9,9 @@ import logging
 import time
 import re
 
+# Configure logger FIRST
+logger = logging.getLogger(__name__)
+
 # YouTube transcript support
 try:
     from youtube_transcript_api import YouTubeTranscriptApi
@@ -17,9 +20,6 @@ try:
 except ImportError:
     HAS_YOUTUBE_API = False
     logger.warning("youtube-transcript-api not installed - YouTube ingestion will not work")
-
-# Configure logger
-logger = logging.getLogger(__name__)
 
 CACHE_DIR = "./chroma_db"
 
