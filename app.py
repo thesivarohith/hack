@@ -1016,25 +1016,45 @@ if not st.session_state.focus_mode:
                         except Exception as e:
                             st.error(f"Error: {e}")
 
-            # URL Input
-            with st.expander("+ Add URL / YouTube"):
-                url_input = st.text_input("URL", placeholder="https://youtube.com/...", label_visibility="collapsed")
-                if st.button("Process URL", use_container_width=True):
-                    if not url_input:
-                        st.warning("Please enter a URL")
-                    else:
-                        with st.spinner("Fetching & Indexing..."):
-                            try:
-                                resp = requests.post(f"{API_URL}/ingest_url", json={"url": url_input})
-                                if resp.status_code == 200:
-                                    data = resp.json()
-                                    st.success(data["message"])
-                                    time.sleep(1)
-                                    st.rerun()
-                                else:
-                                    st.error(f"Failed: {resp.text}")
-                            except Exception as e:
-                                st.error(f"Error: {e}")
+
+            # URL Input - Disabled in cloud mode due to HF Spaces network restrictions
+            is_cloud_mode = os.getenv("USE_SUPABASE", "false").lower() == "true"
+            expander_label = "+ Add URL / YouTube" if not is_cloud_mode else "❌ Add URL / YouTube (Disabled in cloud)"
+            
+            with st.expander(expander_label, expanded=False):
+                if is_cloud_mode:
+                    # Cloud mode - show limitation
+                    st.warning("""
+                    **⚠️ URL/YouTube ingestion is unavailable in the cloud demo**
+                    
+                    Hugging Face Spaces has network restrictions that prevent YouTube and web URL processing.
+                    
+                    **💡 Alternatives:**
+                    - ✅ **Upload PDFs** (works perfectly - use button above!)
+                    - 📄 Download YouTube transcripts manually and save as .txt
+                    - 🏠 **Run locally** for full URL support
+                    
+                    👉 [GitHub: Local Setup Guide](https://github.com/thesivarohith/hack)
+                    """)
+                else:
+                    # Local mode - full functionality
+                    url_input = st.text_input("URL", placeholder="https://youtube.com/...", label_visibility="collapsed")
+                    if st.button("Process URL", use_container_width=True):
+                        if not url_input:
+                            st.warning("Please enter a URL")
+                        else:
+                            with st.spinner("Fetching & Indexing..."):
+                                try:
+                                    resp = requests.post(f"{API_URL}/ingest_url", json={"url": url_input})
+                                    if resp.status_code == 200:
+                                        data = resp.json()
+                                        st.success(data["message"])
+                                        time.sleep(1)
+                                        st.rerun()
+                                    else:
+                                        st.error(f"Failed: {resp.text}")
+                                except Exception as e:
+                                    st.error(f"Error: {e}")
 
 # --- FOCUS MODE UI ---
 if st.session_state.focus_mode:
