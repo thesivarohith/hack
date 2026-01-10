@@ -6,6 +6,7 @@ import time
 import streamlit.components.v1 as components
 from streamlit_calendar import calendar
 from datetime import date
+import os
 
 # -----------------------------------------------------------------------------
 # 1. CONFIG & CSS
