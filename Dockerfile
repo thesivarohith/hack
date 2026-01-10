@@ -16,7 +16,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Create data directories
-RUN mkdir -p data chroma_db
+RUN mkdir -p data chroma_db logs
 
 # Expose ports for backend (8000) and frontend (8501)
 EXPOSE 8501 8000
@@ -27,16 +27,37 @@ ENV LLM_PROVIDER=huggingface
 # Enable Supabase for persistent storage
 ENV USE_SUPABASE=true
 
-# Create startup script
+# Create production startup script with health checks
 RUN echo '#!/bin/bash\n\
-    # Start FastAPI backend in background\n\
-    uvicorn backend.main:app --host 0.0.0.0 --port 8000 &\n\
+    set -e\n\
     \n\
-    # Wait for backend to start\n\
-    sleep 2\n\
+    echo "=== FocusFlow Startup ===" \n\
+    echo "Starting backend on port 8000..." \n\
+    \n\
+    # Start FastAPI backend\n\
+    uvicorn backend.main:app --host 0.0.0.0 --port 8000 > logs/backend.log 2>&1 &\n\
+    BACKEND_PID=$!\n\
+    echo "Backend started with PID $BACKEND_PID" \n\
+    \n\
+    # Wait for backend to be healthy (max 60 seconds)\n\
+    echo "Waiting for backend health check..." \n\
+    for i in {1..60}; do\n\
+    if curl -f http://localhost:8000/health > /dev/null 2>&1; then\n\
+    echo "✅ Backend is healthy!" \n\
+    break\n\
+    fi\n\
+    if [ $i -eq 60 ]; then\n\
+    echo "❌ Backend failed to start. Logs:" \n\
+    tail -50 logs/backend.log\n\
+    exit 1\n\
+    fi\n\
+    echo "Attempt $i/60 - waiting..." \n\
+    sleep 1\n\
+    done\n\
     \n\
     # Start Streamlit frontend\n\
-    streamlit run app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true\n\
+    echo "Starting frontend on port 8501..." \n\
+    exec streamlit run app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true\n\
     ' > /app/start.sh && chmod +x /app/start.sh
 
 # Run startup script
