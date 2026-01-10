@@ -38,41 +38,84 @@ def ingest_document(file_path: str):
 def ingest_url(url: str):
     """
     Ingests content from a URL (YouTube or Web).
+    Uses youtube-transcript-api for YouTube (works in cloud).
     """
-    from langchain_community.document_loaders import YoutubeLoader, WebBaseLoader
-    import socket
-    import requests
-    
-    # Test internet connectivity first
-    try:
-        socket.create_connection(("8.8.8.8", 53), timeout=3)
-    except OSError:
-        raise ConnectionError("No internet connection available. URL ingestion requires internet access.")
+    from langchain_community.document_loaders import WebBaseLoader
+    from youtube_transcript_api import YouTubeTranscriptApi
+    from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
+    import re
+    import time
     
     docs = []
+    title = url
+    
     try:
-        if "youtube.com" in url or "youtu.be" in url:
-            logger.info(f"Attempting to load YouTube video: {url}")
-            try:
-                # Try with metadata first (requires pytube, often flaky)
-                loader = YoutubeLoader.from_youtube_url(url, add_video_info=True)
-                docs = loader.load()
-                logger.info("Successfully loaded with metadata")
-            except Exception as e:
-                logger.warning(f"Metadata load failed, trying transcript only: {e}")
-                # Fallback: Transcript only (no title/author)
-                loader = YoutubeLoader.from_youtube_url(url, add_video_info=False)
-                docs = loader.load()
-                logger.info("Successfully loaded transcript")
+        # Check if it's a YouTube URL
+        is_youtube = "youtube.com" in url or "youtu.be" in url
+        
+        if is_youtube:
+            logger.info(f"Processing YouTube URL: {url}")
+            
+            # Extract video ID
+            video_id = None
+            if "youtu.be/" in url:
+                video_id = url.split("youtu.be/")[1].split("?")[0]
+            elif "youtube.com/watch?v=" in url:
+                video_id = url.split("v=")[1].split("&")[0]
+            
+            if not video_id:
+                raise ValueError("Could not extract video ID from YouTube URL")
+            
+            logger.info(f"Extracted video ID: {video_id}")
+            
+            # Fetch transcript with retry logic
+            transcript_text = None
+            max_retries = 3
+            
+            for attempt in range(max_retries):
+                try:
+                    logger.info(f"Fetching transcript (attempt {attempt + 1}/{max_retries})")
+                    transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
+                    transcript_text = ' '.join([t['text'] for t in transcript_list])
+                    logger.info(f"Successfully fetched transcript ({len(transcript_text)} chars)")
+                    break
+                except (TranscriptsDisabled, NoTranscriptFound) as e:
+                    logger.error(f"No transcript available: {e}")
+                    raise ValueError("This video doesn't have captions/transcripts available")
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        wait_time = 2 ** attempt  # Exponential backoff
+                        logger.warning(f"Attempt {attempt + 1} failed: {e}. Retrying in {wait_time}s...")
+                        time.sleep(wait_time)
+                    else:
+                        logger.error(f"All retry attempts failed: {e}")
+                        raise
+            
+            if not transcript_text:
+                raise ValueError("Failed to fetch transcript after retries")
+            
+            # Create a document from the transcript
+            from langchain.schema import Document
+            docs = [Document(
+                page_content=transcript_text,
+                metadata={
+                    "source": url,
+                    "title": f"YouTube: {video_id}",
+                    "type": "youtube"
+                }
+            )]
+            title = f"YouTube Video: {video_id}"
+            
         else:
-            logger.info(f"Attempting to load web page: {url}")
-            # Add timeout to web loader
+            # Regular web page
+            logger.info(f"Processing web page: {url}")
             loader = WebBaseLoader(url)
             loader.requests_kwargs = {'timeout': 30}
             docs = loader.load()
             logger.info(f"Successfully loaded {len(docs)} documents")
+            title = docs[0].metadata.get("title", url) if docs else url
             
-        # Generic processing
+        # Process and store documents
         splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         splits = splitter.split_documents(docs)
         
@@ -88,17 +131,16 @@ def ingest_url(url: str):
             persist_directory=CACHE_DIR
         )
         
-        title = docs[0].metadata.get("title", url) if docs else url
         logger.info(f"Successfully ingested: {title}")
-
         return title
         
-    except ConnectionError as e:
-        logger.error(f"Connection error: {e}")
+    except ValueError as e:
+        # User-friendly errors
+        logger.error(f"Validation error: {e}")
         raise
     except Exception as e:
         logger.error(f"Error ingesting URL: {e}")
-        raise ValueError(f"Failed to ingest URL: {str(e)}")
+        raise ValueError(f"Failed to process URL: {str(e)}")
 
 def delete_document(source_path: str):
     """
