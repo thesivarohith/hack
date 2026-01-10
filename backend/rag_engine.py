@@ -4,7 +4,19 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_community.llms import Ollama
 from backend.config import get_llm, get_embeddings
+from langchain.schema import Document
 import logging
+import time
+import re
+
+# YouTube transcript support
+try:
+    from youtube_transcript_api import YouTubeTranscriptApi
+    from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
+    HAS_YOUTUBE_API = True
+except ImportError:
+    HAS_YOUTUBE_API = False
+    logger.warning("youtube-transcript-api not installed - YouTube ingestion will not work")
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -41,10 +53,9 @@ def ingest_url(url: str):
     Uses youtube-transcript-api for YouTube (works in cloud).
     """
     from langchain_community.document_loaders import WebBaseLoader
-    from youtube_transcript_api import YouTubeTranscriptApi
-    from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
-    import re
-    import time
+    
+    if not HAS_YOUTUBE_API and ("youtube.com" in url or "youtu.be" in url):
+        raise ValueError("YouTube support not available - youtube-transcript-api not installed")
     
     docs = []
     title = url
@@ -95,7 +106,6 @@ def ingest_url(url: str):
                 raise ValueError("Failed to fetch transcript after retries")
             
             # Create a document from the transcript
-            from langchain.schema import Document
             docs = [Document(
                 page_content=transcript_text,
                 metadata={
