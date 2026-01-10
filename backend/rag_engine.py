@@ -4,7 +4,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_community.llms import Ollama
 from backend.config import get_llm, get_embeddings
-from langchain.schema import Document
+from langchain_core.documents import Document
 import logging
 import time
 import re
