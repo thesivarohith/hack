@@ -1,9 +1,15 @@
 import os
 from langchain_community.document_loaders import PyPDFLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_community.llms import Ollama
-from backend.config import get_llm_provider, get_llm_config, LLMProvider, get_embeddings, get_llm
+from langchain.chains import RetrievalQA
+from backend.config import get_llm, get_embeddings
+from langchain.prompts import PromptTemplate
+import logging
+
+# Configure logger
+logger = logging.getLogger(__name__)
 
 CACHE_DIR = "./chroma_db"
 
