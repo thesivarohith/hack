@@ -36,24 +36,37 @@ def ingest_url(url: str):
     Ingests content from a URL (YouTube or Web).
     """
     from langchain_community.document_loaders import YoutubeLoader, WebBaseLoader
+    import socket
+    import requests
+    
+    # Test internet connectivity first
+    try:
+        socket.create_connection(("8.8.8.8", 53), timeout=3)
+    except OSError:
+        raise ConnectionError("No internet connection available. URL ingestion requires internet access.")
     
     docs = []
     try:
         if "youtube.com" in url or "youtu.be" in url:
-
+            logger.info(f"Attempting to load YouTube video: {url}")
             try:
                 # Try with metadata first (requires pytube, often flaky)
                 loader = YoutubeLoader.from_youtube_url(url, add_video_info=True)
                 docs = loader.load()
+                logger.info("Successfully loaded with metadata")
             except Exception as e:
-
+                logger.warning(f"Metadata load failed, trying transcript only: {e}")
                 # Fallback: Transcript only (no title/author)
                 loader = YoutubeLoader.from_youtube_url(url, add_video_info=False)
                 docs = loader.load()
+                logger.info("Successfully loaded transcript")
         else:
-
+            logger.info(f"Attempting to load web page: {url}")
+            # Add timeout to web loader
             loader = WebBaseLoader(url)
+            loader.requests_kwargs = {'timeout': 30}
             docs = loader.load()
+            logger.info(f"Successfully loaded {len(docs)} documents")
             
         # Generic processing
         splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
@@ -61,6 +74,8 @@ def ingest_url(url: str):
         
         if not splits:
             raise ValueError("No content found to ingest")
+        
+        logger.info(f"Split into {len(splits)} chunks, storing in ChromaDB")
             
         # Store in ChromaDB
         Chroma.from_documents(
@@ -70,12 +85,16 @@ def ingest_url(url: str):
         )
         
         title = docs[0].metadata.get("title", url) if docs else url
+        logger.info(f"Successfully ingested: {title}")
 
         return title
         
+    except ConnectionError as e:
+        logger.error(f"Connection error: {e}")
+        raise
     except Exception as e:
-        print(f"Error ingesting URL: {e}")
-        raise e
+        logger.error(f"Error ingesting URL: {e}")
+        raise ValueError(f"Failed to ingest URL: {str(e)}")
 
 def delete_document(source_path: str):
     """
