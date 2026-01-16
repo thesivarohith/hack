@@ -1,6 +1,5 @@
 ---
 title: FocusFlow
-emoji: 📚
 colorFrom: blue
 colorTo: purple
 sdk: docker
