@@ -34,9 +34,24 @@ def ingest_document(file_path: str):
     loader = PyPDFLoader(file_path)
     docs = loader.load()
 
+    # Filter out pages with no real text content
+    docs = [d for d in docs if d.page_content.strip()]
+
+    if not docs:
+        raise ValueError(
+            "No readable text found in this PDF. "
+            "It may be a scanned/image-only document."
+        )
+
     # Split text
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     splits = splitter.split_documents(docs)
+
+    if not splits:
+        raise ValueError(
+            "No readable text found in this PDF. "
+            "It may be a scanned/image-only document."
+        )
     
     # Store in ChromaDB
     # Note: Chroma will automatically persist to disk in newer versions when persist_directory is set
