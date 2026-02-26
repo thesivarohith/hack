@@ -26,24 +26,70 @@ CACHE_DIR = "./chroma_db"
 def ingest_document(file_path: str):
     """
     Ingests a PDF document into the vector database.
+    Falls back to OCR (pytesseract) if standard text extraction yields little/no text.
     """
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"File not found: {file_path}")
 
-    # Load PDF
+    # --- Step 1: Try standard text extraction ---
     loader = PyPDFLoader(file_path)
     docs = loader.load()
 
     # Filter out pages with no real text content
     docs = [d for d in docs if d.page_content.strip()]
 
-    if not docs:
-        raise ValueError(
-            "No readable text found in this PDF. "
-            "It may be a scanned/image-only document."
-        )
+    # Check total extracted text length
+    total_text = "".join(d.page_content.strip() for d in docs)
 
-    # Split text
+    # --- Step 2: OCR fallback if text is too short ---
+    if len(total_text) < 50:
+        logger.info(f"Standard extraction found only {len(total_text)} chars, attempting OCR fallback...")
+        try:
+            from pdf2image import convert_from_path
+            import pytesseract
+
+            # Convert PDF pages to images at 300 DPI
+            images = convert_from_path(file_path, dpi=300)
+            ocr_pages = []
+
+            for page_num, image in enumerate(images):
+                page_text = pytesseract.image_to_string(image)
+                if page_text.strip():
+                    ocr_pages.append(Document(
+                        page_content=page_text,
+                        metadata={"source": file_path, "page": page_num}
+                    ))
+
+            if ocr_pages:
+                ocr_total = "".join(d.page_content.strip() for d in ocr_pages)
+                if len(ocr_total) < 50:
+                    raise ValueError(
+                        "Could not extract text even after OCR. "
+                        "Please upload a clearer scan."
+                    )
+                docs = ocr_pages
+                logger.info(f"OCR extracted {len(ocr_total)} chars from {len(ocr_pages)} pages")
+            else:
+                raise ValueError(
+                    "Could not extract text even after OCR. "
+                    "Please upload a clearer scan."
+                )
+        except ImportError:
+            logger.warning("pytesseract/pdf2image not installed, cannot OCR")
+            raise ValueError(
+                "No readable text found and OCR libraries are not available. "
+                "Please upload a text-based PDF."
+            )
+        except ValueError:
+            raise  # Re-raise our own clear errors
+        except Exception as e:
+            logger.error(f"OCR fallback failed: {e}")
+            raise ValueError(
+                f"OCR processing failed: {str(e)}. "
+                "Please try a clearer scan or a text-based PDF."
+            )
+
+    # --- Step 3: Split text (unchanged) ---
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     splits = splitter.split_documents(docs)
 
@@ -53,8 +99,7 @@ def ingest_document(file_path: str):
             "It may be a scanned/image-only document."
         )
     
-    # Store in ChromaDB
-    # Note: Chroma will automatically persist to disk in newer versions when persist_directory is set
+    # --- Step 4: Store in ChromaDB (unchanged) ---
     Chroma.from_documents(
         documents=splits,
         embedding=get_embeddings(),

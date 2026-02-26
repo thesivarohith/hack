@@ -1013,7 +1013,18 @@ if not st.session_state.focus_mode:
                                     time.sleep(1)
                                     st.rerun()
                                 else:
-                                    st.error(f"Upload failed: {resp.text}")
+                                    # Parse error for user-friendly message
+                                    try:
+                                        error_detail = resp.json().get("detail", resp.text)
+                                    except Exception:
+                                        error_detail = resp.text
+                                    
+                                    if "OCR" in str(error_detail) or "scan" in str(error_detail).lower():
+                                        st.error(f"📸 {error_detail}")
+                                    elif "No readable text" in str(error_detail):
+                                        st.error("📄 This PDF appears to be scanned/image-only. OCR could not extract text. Please try a clearer scan or a text-based PDF.")
+                                    else:
+                                        st.error(f"Upload failed: {error_detail}")
                         except Exception as e:
                             st.error(f"Error: {e}")
 
