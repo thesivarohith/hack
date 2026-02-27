@@ -21,6 +21,8 @@ pytesseract>=0.3.10
 pdf2image>=1.16.0
 Pillow>=10.0.0
 python-dotenv>=1.0.0
+google-api-python-client>=2.100.0
+firebase-admin>=6.0.0
 
 # Hugging Face dependencies for cloud deployment
 huggingface-hub>=0.20.0

@@ -3,7 +3,7 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_community.llms import Ollama
-from backend.config import get_llm, get_embeddings
+from backend.config import get_llm, get_embeddings, has_youtube_api_key, YOUTUBE_API_KEY
 from langchain_core.documents import Document
 import logging
 import time
@@ -19,9 +19,201 @@ try:
     HAS_YOUTUBE_API = True
 except ImportError:
     HAS_YOUTUBE_API = False
-    logger.warning("youtube-transcript-api not installed - YouTube ingestion will not work")
+    logger.warning("youtube-transcript-api not installed - YouTube local fallback will not work")
 
 CACHE_DIR = "./chroma_db"
+
+
+def _parse_srt_to_text(srt_content: str) -> str:
+    """Parse SRT subtitle format to plain text."""
+    lines = srt_content.split('\n')
+    text_lines = []
+    for line in lines:
+        line = line.strip()
+        # Skip empty lines, sequence numbers, and timestamp lines
+        if not line:
+            continue
+        if line.isdigit():
+            continue
+        if re.match(r'\d{2}:\d{2}:\d{2}', line):
+            continue
+        text_lines.append(line)
+    return ' '.join(text_lines)
+
+
+def _fetch_youtube_transcript(video_id: str) -> tuple:
+    """
+    Fetch YouTube transcript using the best available method.
+    Returns (transcript_text, caption_type) tuple.
+    
+    Method A: YouTube Data API v3 (when YOUTUBE_API_KEY is set - reliable in cloud)
+    Method B: youtube-transcript-api fallback (local mode)
+    """
+    
+    # --- METHOD A: YouTube Data API v3 (cloud-reliable) ---
+    if has_youtube_api_key():
+        logger.info("Using YouTube Data API v3 (API key found)")
+        try:
+            from googleapiclient.discovery import build
+            from googleapiclient.errors import HttpError
+            
+            youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
+            
+            # Get available caption tracks
+            captions_response = youtube.captions().list(
+                part='snippet',
+                videoId=video_id
+            ).execute()
+            
+            caption_items = captions_response.get('items', [])
+            
+            if not caption_items:
+                raise ValueError(
+                    "No captions found for this video. "
+                    "The video may have captions disabled by the creator."
+                )
+            
+            # Select best caption track by priority
+            selected_track = None
+            caption_type = "manual"
+            
+            # Priority 1: Manual English
+            for item in caption_items:
+                snippet = item['snippet']
+                if snippet.get('language') == 'en' and snippet.get('trackKind') == 'standard':
+                    selected_track = item
+                    caption_type = "manual"
+                    break
+            
+            # Priority 2: Auto-generated English
+            if not selected_track:
+                for item in caption_items:
+                    snippet = item['snippet']
+                    if snippet.get('language') == 'en' and snippet.get('trackKind') == 'asr':
+                        selected_track = item
+                        caption_type = "auto-generated"
+                        break
+            
+            # Priority 3: Any manual caption
+            if not selected_track:
+                for item in caption_items:
+                    snippet = item['snippet']
+                    if snippet.get('trackKind') == 'standard':
+                        selected_track = item
+                        caption_type = "manual"
+                        break
+            
+            # Priority 4: Any auto-generated caption
+            if not selected_track:
+                for item in caption_items:
+                    selected_track = item
+                    caption_type = "auto-generated"
+                    break
+            
+            if not selected_track:
+                raise ValueError(
+                    "No captions found for this video. "
+                    "The video may have captions disabled by the creator."
+                )
+            
+            logger.info(f"Selected caption track: {selected_track['snippet'].get('language')} ({caption_type})")
+            
+            # Download the caption track
+            caption_id = selected_track['id']
+            subtitle_response = youtube.captions().download(
+                id=caption_id,
+                tfmt='srt'
+            ).execute()
+            
+            # Parse SRT to plain text
+            srt_text = subtitle_response.decode('utf-8') if isinstance(subtitle_response, bytes) else str(subtitle_response)
+            transcript_text = _parse_srt_to_text(srt_text)
+            
+            if not transcript_text or len(transcript_text) < 50:
+                raise ValueError(
+                    "Transcript is too short or empty. "
+                    "Try a different video with more spoken content."
+                )
+            
+            logger.info(f"YouTube Data API: extracted {len(transcript_text)} chars ({caption_type})")
+            return transcript_text, caption_type
+            
+        except HttpError as e:
+            if e.resp.status == 403:
+                if 'quotaExceeded' in str(e):
+                    raise ValueError(
+                        "YouTube API quota exceeded. "
+                        "Please try again later or upload a PDF instead."
+                    )
+                # captions().download requires OAuth for third-party videos
+                # Fall through to Method B
+                logger.warning(f"YouTube Data API forbidden (likely needs OAuth for captions download): {e}")
+                logger.info("Falling back to youtube-transcript-api...")
+            elif e.resp.status == 404:
+                raise ValueError(
+                    "Could not access this video. "
+                    "It may be private, deleted, or region-restricted."
+                )
+            else:
+                logger.error(f"YouTube Data API error: {e}")
+                logger.info("Falling back to youtube-transcript-api...")
+        except ValueError:
+            raise
+        except Exception as e:
+            logger.error(f"YouTube Data API unexpected error: {e}")
+            logger.info("Falling back to youtube-transcript-api...")
+    
+    # --- METHOD B: youtube-transcript-api fallback (local / API fallback) ---
+    if not HAS_YOUTUBE_API:
+        raise ValueError(
+            "YouTube transcript libraries not available. "
+            "Please upload a PDF instead."
+        )
+    
+    logger.info("Using youtube-transcript-api (local fallback)")
+    ytt = YouTubeTranscriptApi()
+    
+    try:
+        # PRIORITY 1: Try manual English captions
+        logger.info("Trying manual English captions...")
+        transcript = ytt.fetch(video_id, languages=['en'])
+        transcript_text = ' '.join([t.text for t in transcript])
+        logger.info(f"Got manual English transcript ({len(transcript_text)} chars)")
+        return transcript_text, "manual"
+    except Exception as e1:
+        logger.info(f"Manual English not available: {e1}")
+        try:
+            # PRIORITY 2: Try any available transcript (includes auto-generated)
+            logger.info("Trying any available transcript...")
+            transcript_list = ytt.list(video_id)
+            first_available = next(iter(transcript_list))
+            transcript = first_available.fetch()
+            transcript_text = ' '.join([t.text for t in transcript])
+            logger.info(f"Got fallback transcript ({len(transcript_text)} chars)")
+            return transcript_text, "auto-generated"
+        except (TranscriptsDisabled, NoTranscriptFound):
+            raise ValueError(
+                "No captions found for this video. "
+                "This video may have captions disabled entirely. "
+                "Try a different video or upload a PDF instead."
+            )
+        except InvalidVideoId:
+            raise ValueError(f"Invalid YouTube video ID: {video_id}. Please check the URL.")
+        except StopIteration:
+            raise ValueError(
+                "No captions found for this video. "
+                "This video may have captions disabled entirely. "
+                "Try a different video or upload a PDF instead."
+            )
+        except Exception as e2:
+            logger.error(f"All transcript fetch attempts failed: {e2}")
+            raise ValueError(
+                "No captions found for this video. "
+                "This video may have captions disabled entirely. "
+                "Try a different video or upload a PDF instead."
+            )
+
+
 
 def ingest_document(file_path: str):
     """
@@ -110,12 +302,12 @@ def ingest_document(file_path: str):
 def ingest_url(url: str):
     """
     Ingests content from a URL (YouTube or Web).
-    Uses youtube-transcript-api for YouTube (works in cloud).
+    Uses YouTube Data API v3 in cloud mode, youtube-transcript-api locally.
     """
     from langchain_community.document_loaders import WebBaseLoader
     
-    if not HAS_YOUTUBE_API and ("youtube.com" in url or "youtu.be" in url):
-        raise ValueError("YouTube support not available - youtube-transcript-api not installed")
+    if not HAS_YOUTUBE_API and not has_youtube_api_key() and ("youtube.com" in url or "youtu.be" in url):
+        raise ValueError("YouTube support not available - no API key or transcript library found")
     
     docs = []
     title = url
@@ -127,8 +319,8 @@ def ingest_url(url: str):
         if is_youtube:
             logger.info(f"Processing YouTube URL: {url}")
             
-            # Extract video ID using regex (supports watch, youtu.be, shorts)
-            video_id_match = re.search(r'(?:v=|youtu\.be/|shorts/)([a-zA-Z0-9_-]{11})', url)
+            # Extract video ID using regex (supports watch, youtu.be, shorts, embed)
+            video_id_match = re.search(r'(?:v=|youtu\.be/|shorts/|embed/)([a-zA-Z0-9_-]{11})', url)
             video_id = video_id_match.group(1) if video_id_match else None
             
             if not video_id:
@@ -139,55 +331,8 @@ def ingest_url(url: str):
             
             logger.info(f"Extracted video ID: {video_id}")
             
-            # Fetch transcript with multi-priority fallback (v1.x API)
-            transcript_text = None
-            caption_type = "manual"  # Track caption source for frontend
-            ytt = YouTubeTranscriptApi()
-            
-            try:
-                # PRIORITY 1: Try manual English captions
-                logger.info("Trying manual English captions...")
-                transcript = ytt.fetch(video_id, languages=['en'])
-                transcript_text = ' '.join([t.text for t in transcript])
-                caption_type = "manual"
-                logger.info(f"Got manual English transcript ({len(transcript_text)} chars)")
-            except Exception as e1:
-                logger.info(f"Manual English not available: {e1}")
-                try:
-                    # PRIORITY 2: Try any available transcript (includes auto-generated)
-                    logger.info("Trying any available transcript...")
-                    transcript_list = ytt.list(video_id)
-                    first_available = next(iter(transcript_list))
-                    transcript = first_available.fetch()
-                    transcript_text = ' '.join([t.text for t in transcript])
-                    caption_type = "auto-generated"
-                    logger.info(f"Got auto-generated transcript ({len(transcript_text)} chars)")
-                except (TranscriptsDisabled, NoTranscriptFound) as e2:
-                    logger.error(f"No transcripts available at all: {e2}")
-                    raise ValueError(
-                        "No captions found for this video. "
-                        "This video may have captions disabled entirely. "
-                        "Try a different video or upload a PDF instead."
-                    )
-                except InvalidVideoId as e2:
-                    logger.error(f"Invalid video ID: {e2}")
-                    raise ValueError(f"Invalid YouTube video ID: {video_id}. Please check the URL.")
-                except StopIteration:
-                    raise ValueError(
-                        "No captions found for this video. "
-                        "This video may have captions disabled entirely. "
-                        "Try a different video or upload a PDF instead."
-                    )
-                except Exception as e2:
-                    logger.error(f"All transcript fetch attempts failed: {e2}")
-                    raise ValueError(
-                        "No captions found for this video. "
-                        "This video may have captions disabled entirely. "
-                        "Try a different video or upload a PDF instead."
-                    )
-            
-            if not transcript_text:
-                raise ValueError("Failed to fetch transcript")
+            # Fetch transcript using the appropriate method
+            transcript_text, caption_type = _fetch_youtube_transcript(video_id)
             
             # Clean up transcript text
             transcript_text = re.sub(r'\[.*?\]', '', transcript_text)  # Remove [Music], [Applause], etc.

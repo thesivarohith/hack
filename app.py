@@ -1162,6 +1162,10 @@ if not st.session_state.focus_mode:
                                     error_detail = resp.json().get('detail', resp.text)
                                     if "No captions found" in str(error_detail) or "captions disabled" in str(error_detail):
                                         st.error("❌ No captions available for this video. YouTube may have captions disabled for this video. Try a video with the CC button visible, or upload a PDF instead.")
+                                    elif "quota exceeded" in str(error_detail).lower():
+                                        st.error("⚠️ YouTube API limit reached. Try again later or upload a PDF instead.")
+                                    elif "Could not access" in str(error_detail) or "private" in str(error_detail).lower():
+                                        st.error("❌ Could not access this video. It may be private, deleted, or region-restricted.")
                                     elif "Could not extract video ID" in str(error_detail):
                                         st.error("❌ Invalid YouTube URL format. Supported: youtube.com/watch?v=ID, youtu.be/ID, or youtube.com/shorts/ID")
                                     elif "Invalid YouTube video ID" in str(error_detail):

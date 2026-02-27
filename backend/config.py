@@ -95,3 +95,22 @@ def get_embeddings():
         return HuggingFaceEmbeddings(
             model_name="sentence-transformers/all-MiniLM-L6-v2"
         )
+
+# ========== FIREBASE AUTH CONFIG ==========
+FIREBASE_SERVICE_ACCOUNT_JSON = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON", "")
+FIREBASE_API_KEY = os.getenv("FIREBASE_API_KEY", "")
+FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID", "")
+
+def is_firebase_configured():
+    """Check if Firebase credentials are available (cloud mode with auth)"""
+    return bool(FIREBASE_SERVICE_ACCOUNT_JSON)
+
+# ========== YOUTUBE DATA API CONFIG ==========
+# Set YOUTUBE_API_KEY in HuggingFace Spaces secrets for cloud-reliable transcript fetching
+# Without it, falls back to youtube-transcript-api (works locally but blocked on datacenter IPs)
+# Get your key: https://console.cloud.google.com → Enable YouTube Data API v3 → Create API Key
+YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", None)
+
+def has_youtube_api_key():
+    """Check if YouTube Data API key is configured"""
+    return bool(YOUTUBE_API_KEY)
