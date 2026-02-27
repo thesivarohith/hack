@@ -1149,13 +1149,7 @@ if not st.session_state.focus_mode:
                                 resp = requests.post(f"{API_URL}/ingest_url", json={"url": url_input}, headers=get_headers(), timeout=120)
                                 if resp.status_code == 200:
                                     data = resp.json()
-                                    message = data.get('message', 'Success')
-                                    # Show caption type info if available
-                                    if "auto-generated" in message:
-                                        st.success(f"✅ {message}")
-                                        st.info("ℹ️ Transcript extracted using auto-generated captions. Quality may vary — auto-captions can have errors.")
-                                    else:
-                                        st.success(f"✅ {message}")
+                                    st.success(f"✅ YouTube transcript extracted successfully.")
                                     time.sleep(1)
                                     st.rerun()
                                 else:
