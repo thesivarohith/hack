@@ -310,6 +310,96 @@ st.markdown("""
 # Backend URL
 API_URL = "http://localhost:8000"
 
+# ========== FIREBASE AUTH CONFIG ==========
+FIREBASE_API_KEY = os.getenv("FIREBASE_API_KEY", "")
+FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID", "")
+FIREBASE_AUTH_ENABLED = bool(FIREBASE_API_KEY and FIREBASE_PROJECT_ID)
+
+# ========== FIREBASE LOGIN SCREEN ==========
+if FIREBASE_AUTH_ENABLED and "firebase_token" not in st.session_state:
+    # Check if token was passed back from the login component
+    params = st.query_params
+    if "fb_token" in params and "fb_uid" in params:
+        st.session_state["firebase_token"] = params["fb_token"]
+        st.session_state["user_info"] = {
+            "uid": params.get("fb_uid", ""),
+            "email": params.get("fb_email", ""),
+            "displayName": params.get("fb_name", "User"),
+            "photoURL": params.get("fb_photo", ""),
+        }
+        # Clear query params after reading
+        st.query_params.clear()
+        st.rerun()
+    else:
+        # Show login screen
+        st.markdown("""
+        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center;
+                    min-height: 80vh; text-align: center;">
+            <div style="font-size: 3rem; margin-bottom: 0.25rem;">🎯</div>
+            <h1 style="font-size: 2.5rem; font-weight: 700; margin-bottom: 0.5rem;">FocusFlow</h1>
+            <p style="color: #6B7280; font-size: 1.1rem; margin-bottom: 2rem;">AI-Powered Study Companion</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Firebase Google Sign-In Component
+        firebase_login_html = f"""
+        <div id="firebaseui-container" style="display:flex; justify-content:center; padding: 0;">
+            <button id="google-signin-btn" onclick="signInWithGoogle()" style="
+                display: flex; align-items: center; gap: 12px;
+                padding: 12px 32px; border: 1px solid #dadce0; border-radius: 8px;
+                background: white; cursor: pointer; font-family: 'Inter', sans-serif;
+                font-size: 16px; font-weight: 500; color: #3c4043;
+                box-shadow: 0 1px 3px rgba(60,64,67,.15);
+                transition: box-shadow 0.2s, background 0.2s;
+            " onmouseover="this.style.boxShadow='0 2px 6px rgba(60,64,67,.25)'; this.style.background='#f8f9fa'"
+               onmouseout="this.style.boxShadow='0 1px 3px rgba(60,64,67,.15)'; this.style.background='white'">
+                <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+                Sign in with Google
+            </button>
+        </div>
+
+        <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+        <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+        <script>
+            const firebaseConfig = {{
+                apiKey: "{FIREBASE_API_KEY}",
+                authDomain: "{FIREBASE_PROJECT_ID}.firebaseapp.com",
+                projectId: "{FIREBASE_PROJECT_ID}",
+            }};
+
+            if (!firebase.apps.length) {{
+                firebase.initializeApp(firebaseConfig);
+            }}
+
+            function signInWithGoogle() {{
+                const provider = new firebase.auth.GoogleAuthProvider();
+                firebase.auth().signInWithPopup(provider)
+                    .then(function(result) {{
+                        return result.user.getIdToken();
+                    }})
+                    .then(function(idToken) {{
+                        const user = firebase.auth().currentUser;
+                        const params = new URLSearchParams({{
+                            fb_token: idToken,
+                            fb_uid: user.uid,
+                            fb_email: user.email || '',
+                            fb_name: user.displayName || 'User',
+                            fb_photo: user.photoURL || '',
+                        }});
+                        // Navigate parent to pass token back to Streamlit
+                        window.parent.location.search = params.toString();
+                    }})
+                    .catch(function(error) {{
+                        console.error('Sign-in error:', error);
+                        document.getElementById('firebaseui-container').innerHTML =
+                            '<p style="color:red;">Sign-in failed: ' + error.message + '</p>';
+                    }});
+            }}
+        </script>
+        """
+        components.html(firebase_login_html, height=80)
+        st.stop()  # Don't render the rest of the app
+
 # Session State
 if "timer_running" not in st.session_state: st.session_state.timer_running = False
 if "expiry_time" not in st.session_state: st.session_state.expiry_time = None
@@ -321,15 +411,13 @@ if "expanded_topics" not in st.session_state: st.session_state.expanded_topics =
 if "show_analytics" not in st.session_state: st.session_state.show_analytics = False
 if "topic_scores" not in st.session_state: st.session_state.topic_scores = {}  # Track quiz performance by topic_id
 
-# Generate unique student ID per browser session (for multi-user support)
-if "student_id" not in st.session_state:
-    import uuid
-    st.session_state.student_id = f"student_{uuid.uuid4().hex[:12]}"
-
-# Helper function to add student_id header to all API requests
+# Helper function to add auth headers to all API requests
 def get_headers():
-    """Get headers with student_id for multi-user support"""
-    return {"X-Student-Id": st.session_state.student_id}
+    """Get auth headers for API requests — uses Firebase token if available."""
+    headers = {}
+    if FIREBASE_AUTH_ENABLED and "firebase_token" in st.session_state:
+        headers["Authorization"] = f"Bearer {st.session_state['firebase_token']}"
+    return headers
 
 # Focus Mode State
 if "focus_mode" not in st.session_state: st.session_state.focus_mode = False
@@ -339,7 +427,7 @@ if "active_topic" not in st.session_state: st.session_state.active_topic = None
 if "profile_loaded" not in st.session_state:
     st.session_state.profile_loaded = True
     try:
-        resp = requests.get(f"{API_URL}/student/profile", timeout=5)
+        resp = requests.get(f"{API_URL}/student/profile", headers=get_headers(), timeout=5)
         if resp.status_code == 200:
             profile = resp.json()
             
@@ -402,7 +490,7 @@ if "profile_loaded" not in st.session_state:
                         requests.post(f"{API_URL}/student/save_progress", json={
                             "current_study_day": current_study_day,
                             "last_access_date": today_str
-                        }, timeout=5)
+                        }, headers=get_headers(), timeout=5)
                         st.toast(f"📅 Advanced to Day {current_study_day}! New topics unlocked", icon="🎯")
                     except:
                         pass
@@ -643,7 +731,7 @@ def show_quiz_dialog(topic_id, topic_name):
             # Call backend
             try:
                 payload = {"topic_id": topic_id, "quiz_score": score}
-                resp = requests.post(f"{API_URL}/unlock_topic", json=payload)
+                resp = requests.post(f"{API_URL}/unlock_topic", json=payload, headers=get_headers())
                 if resp.status_code == 200:
                     data = resp.json()
                     if data.get("success"):
@@ -791,6 +879,26 @@ else:
 # --- LEFT COLUMN: Control Center ---
 if not st.session_state.focus_mode:
     with left_col:
+        # ====== USER INFO & SIGN-OUT (Firebase) ======
+        if FIREBASE_AUTH_ENABLED and "user_info" in st.session_state:
+            user = st.session_state["user_info"]
+            photo_html = ""
+            if user.get("photoURL"):
+                photo_html = f'<img src="{user["photoURL"]}" style="width:32px;height:32px;border-radius:50%;margin-right:8px;vertical-align:middle;"/>'
+            st.markdown(f"""
+            <div style="display:flex; align-items:center; margin-bottom:12px; padding:8px 12px;
+                        background:#F3F4F6; border-radius:8px; font-size:0.9rem;">
+                {photo_html}
+                <span style="font-weight:600; color:#374151;">{user.get('displayName', 'User')}</span>
+            </div>
+            """, unsafe_allow_html=True)
+            if st.button("🚪 Sign Out", key="signout_btn", use_container_width=True):
+                for key in ["firebase_token", "user_info", "profile_loaded", "study_plan",
+                            "topic_scores", "mastery_data", "chat_history"]:
+                    st.session_state.pop(key, None)
+                st.rerun()
+            st.markdown("---")
+
         st.markdown("### Control Center")
         
         # Timer Widget
@@ -953,7 +1061,7 @@ if not st.session_state.focus_mode:
             # Helper to fetch sources
             sources_list = []
             try:
-                s_resp = requests.get(f"{API_URL}/sources")
+                s_resp = requests.get(f"{API_URL}/sources", headers=get_headers())
                 if s_resp.status_code == 200:
                     sources_list = s_resp.json()
             except:
@@ -978,7 +1086,7 @@ if not st.session_state.focus_mode:
                         if st.button("🗑️", key=f"del_{src['id']}", help="Delete source", type="tertiary"):
                             try:
                                 # Optimistically update UI by removing from list or just rerun
-                                requests.delete(f"{API_URL}/sources/{src['id']}")
+                                requests.delete(f"{API_URL}/sources/{src['id']}", headers=get_headers())
                                 time.sleep(0.1) # Small delay for DB prop
                                 st.rerun()
                             except Exception as e:
@@ -1006,7 +1114,7 @@ if not st.session_state.focus_mode:
                             # Send to backend
                             files = {"file": (uploaded.name, uploaded, uploaded.type)}
                             with st.spinner("Uploading & Indexing..."):
-                                resp = requests.post(f"{API_URL}/upload", files=files)
+                                resp = requests.post(f"{API_URL}/upload", files=files, headers=get_headers())
                                 if resp.status_code == 200:
                                     st.session_state.processed_files.add(uploaded.name)
                                     st.success(f"Successfully uploaded: {uploaded.name}")
@@ -1038,18 +1146,28 @@ if not st.session_state.focus_mode:
                     else:
                         with st.spinner("Fetching content... This may take a moment for YouTube videos."):
                             try:
-                                resp = requests.post(f"{API_URL}/ingest_url", json={"url": url_input}, timeout=120)
+                                resp = requests.post(f"{API_URL}/ingest_url", json={"url": url_input}, headers=get_headers(), timeout=120)
                                 if resp.status_code == 200:
                                     data = resp.json()
-                                    st.success(f"✅ {data['message']}")
+                                    message = data.get('message', 'Success')
+                                    # Show caption type info if available
+                                    if "auto-generated" in message:
+                                        st.success(f"✅ {message}")
+                                        st.info("ℹ️ Transcript extracted using auto-generated captions. Quality may vary — auto-captions can have errors.")
+                                    else:
+                                        st.success(f"✅ {message}")
                                     time.sleep(1)
                                     st.rerun()
                                 else:
                                     error_detail = resp.json().get('detail', resp.text)
-                                    if "doesn't have captions" in error_detail:
-                                        st.error("⚠️ This YouTube video doesn't have captions/transcripts available. Try a different video or upload the content as a PDF.")
-                                    elif "Could not extract video ID" in error_detail:
-                                        st.error("❌ Invalid YouTube URL format. Please check the URL and try again.")
+                                    if "No captions found" in str(error_detail) or "captions disabled" in str(error_detail):
+                                        st.error("❌ No captions available for this video. YouTube may have captions disabled for this video. Try a video with the CC button visible, or upload a PDF instead.")
+                                    elif "Could not extract video ID" in str(error_detail):
+                                        st.error("❌ Invalid YouTube URL format. Supported: youtube.com/watch?v=ID, youtu.be/ID, or youtube.com/shorts/ID")
+                                    elif "Invalid YouTube video ID" in str(error_detail):
+                                        st.error("❌ Invalid video ID. Please check the URL and try again.")
+                                    elif "too short" in str(error_detail):
+                                        st.error("⚠️ The video's transcript is too short or mostly music/sound effects. Try a video with more spoken content.")
                                     else:
                                         st.error(f"Failed: {error_detail}")
                             except requests.Timeout:
@@ -1088,7 +1206,7 @@ if st.session_state.focus_mode:
                  try:
                      # Prepare history
                      history = [{"role": m["role"], "content": m["content"]} for m in st.session_state.chat_history[:-1][-5:]]
-                     resp = requests.post(f"{API_URL}/query", json={"question": prompt, "history": history})
+                     resp = requests.post(f"{API_URL}/query", json={"question": prompt, "history": history}, headers=get_headers())
                      if resp.status_code == 200:
                          data = resp.json()
                          ans = data.get("answer", "No answer.")
@@ -1124,7 +1242,7 @@ if st.session_state.focus_mode:
         if content_key not in st.session_state:
             with st.spinner(f"🤖 AI is writing a lesson for '{topic_title}'..."):
                 try:
-                    resp = requests.post(f"{API_URL}/generate_lesson", json={"topic": topic_title}, timeout=300)
+                    resp = requests.post(f"{API_URL}/generate_lesson", json={"topic": topic_title}, headers=get_headers(), timeout=300)
                     
                     if resp.status_code == 200:
                         st.session_state[content_key] = resp.json()["content"]
@@ -1222,7 +1340,7 @@ if not st.session_state.focus_mode:
                                 for msg in st.session_state.chat_history[:-1][-5:] # Last 5 valid history items before current question
                             ]
                             
-                            resp = requests.post(f"{API_URL}/query", json={"question": user_input, "history": history})
+                            resp = requests.post(f"{API_URL}/query", json={"question": user_input, "history": history}, headers=get_headers())
                             if resp.status_code == 200:
                                 try:
                                     data = resp.json()
@@ -1278,7 +1396,7 @@ if right_col:
                 with st.spinner("🤖 AI (1B) is thinking..."):
                     try:
                         # Increased timeout to 300s for safety
-                        resp = requests.post(f"{API_URL}/generate_plan", json={"request_text": plan_query}, timeout=300)
+                        resp = requests.post(f"{API_URL}/generate_plan", json={"request_text": plan_query}, headers=get_headers(), timeout=300)
                         
                         if resp.status_code == 200:
                             plan_data = resp.json()
@@ -1309,7 +1427,7 @@ if right_col:
                                 save_resp = requests.post(f"{API_URL}/student/save_plan", json={
                                     "topics": raw_plan,
                                     "num_days": num_days
-                                }, timeout=5)
+                                }, headers=get_headers(), timeout=5)
                                 
                                 if save_resp.status_code == 200:
                                     st.toast(f"💾 Progress saved: {len(raw_plan)} topics", icon="✅")
@@ -1380,7 +1498,7 @@ if right_col:
                         if quiz_key not in st.session_state:
                             with st.spinner(f"🤖 Generating quiz for '{task['title']}'..."):
                                 try:
-                                    resp = requests.post(f"{API_URL}/generate_quiz", json={"topic": task['title']}, timeout=120)
+                                    resp = requests.post(f"{API_URL}/generate_quiz", json={"topic": task['title']}, headers=get_headers(), timeout=120)
                                     if resp.status_code == 200:
                                         st.session_state[quiz_key] = resp.json().get("quiz", [])
                                     else:
@@ -1468,7 +1586,7 @@ if right_col:
                                             "score": score,
                                             "total": len(quiz_data),
                                             "time_taken": 0
-                                        }, timeout=5)
+                                        }, headers=get_headers(), timeout=5)
                                     except Exception:
                                         pass  # Silent fail for auto-save
                                     

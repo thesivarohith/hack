@@ -121,53 +121,83 @@ def ingest_url(url: str):
     title = url
     
     try:
-        # Check if it's a YouTube URL
+        # Check if it's a YouTube URL (including shorts)
         is_youtube = "youtube.com" in url or "youtu.be" in url
         
         if is_youtube:
             logger.info(f"Processing YouTube URL: {url}")
             
-            # Extract video ID
-            video_id = None
-            if "youtu.be/" in url:
-                video_id = url.split("youtu.be/")[1].split("?")[0].split("#")[0]
-            elif "youtube.com/watch" in url and "v=" in url:
-                video_id = url.split("v=")[1].split("&")[0].split("#")[0]
+            # Extract video ID using regex (supports watch, youtu.be, shorts)
+            video_id_match = re.search(r'(?:v=|youtu\.be/|shorts/)([a-zA-Z0-9_-]{11})', url)
+            video_id = video_id_match.group(1) if video_id_match else None
             
-            if not video_id or len(video_id) < 5:
-                raise ValueError("Could not extract video ID from YouTube URL. Supported formats: youtube.com/watch?v=ID or youtu.be/ID")
+            if not video_id:
+                raise ValueError(
+                    "Could not extract video ID from YouTube URL. "
+                    "Supported formats: youtube.com/watch?v=ID, youtu.be/ID, or youtube.com/shorts/ID"
+                )
             
             logger.info(f"Extracted video ID: {video_id}")
             
-            # Fetch transcript with retry logic (using new v1.x API)
+            # Fetch transcript with multi-priority fallback (v1.x API)
             transcript_text = None
-            max_retries = 3
+            caption_type = "manual"  # Track caption source for frontend
             ytt = YouTubeTranscriptApi()
             
-            for attempt in range(max_retries):
+            try:
+                # PRIORITY 1: Try manual English captions
+                logger.info("Trying manual English captions...")
+                transcript = ytt.fetch(video_id, languages=['en'])
+                transcript_text = ' '.join([t.text for t in transcript])
+                caption_type = "manual"
+                logger.info(f"Got manual English transcript ({len(transcript_text)} chars)")
+            except Exception as e1:
+                logger.info(f"Manual English not available: {e1}")
                 try:
-                    logger.info(f"Fetching transcript (attempt {attempt + 1}/{max_retries})")
-                    transcript = ytt.fetch(video_id)
+                    # PRIORITY 2: Try any available transcript (includes auto-generated)
+                    logger.info("Trying any available transcript...")
+                    transcript_list = ytt.list(video_id)
+                    first_available = next(iter(transcript_list))
+                    transcript = first_available.fetch()
                     transcript_text = ' '.join([t.text for t in transcript])
-                    logger.info(f"Successfully fetched transcript ({len(transcript_text)} chars)")
-                    break
-                except (TranscriptsDisabled, NoTranscriptFound) as e:
-                    logger.error(f"No transcript available: {e}")
-                    raise ValueError("This YouTube video has no captions available. Please try a video with subtitles enabled.")
-                except InvalidVideoId as e:
-                    logger.error(f"Invalid video ID: {e}")
+                    caption_type = "auto-generated"
+                    logger.info(f"Got auto-generated transcript ({len(transcript_text)} chars)")
+                except (TranscriptsDisabled, NoTranscriptFound) as e2:
+                    logger.error(f"No transcripts available at all: {e2}")
+                    raise ValueError(
+                        "No captions found for this video. "
+                        "This video may have captions disabled entirely. "
+                        "Try a different video or upload a PDF instead."
+                    )
+                except InvalidVideoId as e2:
+                    logger.error(f"Invalid video ID: {e2}")
                     raise ValueError(f"Invalid YouTube video ID: {video_id}. Please check the URL.")
-                except Exception as e:
-                    if attempt < max_retries - 1:
-                        wait_time = 2 ** attempt  # Exponential backoff
-                        logger.warning(f"Attempt {attempt + 1} failed: {e}. Retrying in {wait_time}s...")
-                        time.sleep(wait_time)
-                    else:
-                        logger.error(f"All retry attempts failed: {e}")
-                        raise
+                except StopIteration:
+                    raise ValueError(
+                        "No captions found for this video. "
+                        "This video may have captions disabled entirely. "
+                        "Try a different video or upload a PDF instead."
+                    )
+                except Exception as e2:
+                    logger.error(f"All transcript fetch attempts failed: {e2}")
+                    raise ValueError(
+                        "No captions found for this video. "
+                        "This video may have captions disabled entirely. "
+                        "Try a different video or upload a PDF instead."
+                    )
             
             if not transcript_text:
-                raise ValueError("Failed to fetch transcript after retries")
+                raise ValueError("Failed to fetch transcript")
+            
+            # Clean up transcript text
+            transcript_text = re.sub(r'\[.*?\]', '', transcript_text)  # Remove [Music], [Applause], etc.
+            transcript_text = re.sub(r'\s+', ' ', transcript_text).strip()  # Normalize whitespace
+            
+            if len(transcript_text) < 50:
+                raise ValueError(
+                    "Transcript is too short or empty after cleanup. "
+                    "Try a different video with more spoken content."
+                )
             
             # Create a document from the transcript
             docs = [Document(
@@ -175,10 +205,11 @@ def ingest_url(url: str):
                 metadata={
                     "source": url,
                     "title": f"YouTube: {video_id}",
-                    "type": "youtube"
+                    "type": "youtube",
+                    "caption_type": caption_type
                 }
             )]
-            title = f"YouTube Video: {video_id}"
+            title = f"YouTube Video: {video_id} ({caption_type} captions)"
             
         else:
             # Regular web page
