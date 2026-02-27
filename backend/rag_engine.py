@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 # YouTube transcript support
 try:
     from youtube_transcript_api import YouTubeTranscriptApi
-    from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
+    from youtube_transcript_api import TranscriptsDisabled, NoTranscriptFound, InvalidVideoId
     HAS_YOUTUBE_API = True
 except ImportError:
     HAS_YOUTUBE_API = False
@@ -130,29 +130,33 @@ def ingest_url(url: str):
             # Extract video ID
             video_id = None
             if "youtu.be/" in url:
-                video_id = url.split("youtu.be/")[1].split("?")[0]
-            elif "youtube.com/watch?v=" in url:
-                video_id = url.split("v=")[1].split("&")[0]
+                video_id = url.split("youtu.be/")[1].split("?")[0].split("#")[0]
+            elif "youtube.com/watch" in url and "v=" in url:
+                video_id = url.split("v=")[1].split("&")[0].split("#")[0]
             
-            if not video_id:
-                raise ValueError("Could not extract video ID from YouTube URL")
+            if not video_id or len(video_id) < 5:
+                raise ValueError("Could not extract video ID from YouTube URL. Supported formats: youtube.com/watch?v=ID or youtu.be/ID")
             
             logger.info(f"Extracted video ID: {video_id}")
             
-            # Fetch transcript with retry logic
+            # Fetch transcript with retry logic (using new v1.x API)
             transcript_text = None
             max_retries = 3
+            ytt = YouTubeTranscriptApi()
             
             for attempt in range(max_retries):
                 try:
                     logger.info(f"Fetching transcript (attempt {attempt + 1}/{max_retries})")
-                    transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
-                    transcript_text = ' '.join([t['text'] for t in transcript_list])
+                    transcript = ytt.fetch(video_id)
+                    transcript_text = ' '.join([t.text for t in transcript])
                     logger.info(f"Successfully fetched transcript ({len(transcript_text)} chars)")
                     break
                 except (TranscriptsDisabled, NoTranscriptFound) as e:
                     logger.error(f"No transcript available: {e}")
-                    raise ValueError("This video doesn't have captions/transcripts available")
+                    raise ValueError("This YouTube video has no captions available. Please try a video with subtitles enabled.")
+                except InvalidVideoId as e:
+                    logger.error(f"Invalid video ID: {e}")
+                    raise ValueError(f"Invalid YouTube video ID: {video_id}. Please check the URL.")
                 except Exception as e:
                     if attempt < max_retries - 1:
                         wait_time = 2 ** attempt  # Exponential backoff
