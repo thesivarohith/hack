@@ -1137,41 +1137,69 @@ if not st.session_state.focus_mode:
                             st.error(f"Error: {e}")
 
 
-            # URL Input - Now works in both local and cloud!
+            # URL Input - YouTube uses browser-side fetch, web pages use server-side
             with st.expander("+ Add URL / YouTube"):
                 url_input = st.text_input("URL", placeholder="https://youtube.com/... or any webpage", label_visibility="collapsed")
                 if st.button("Process URL", use_container_width=True):
                     if not url_input:
                         st.warning("Please enter a URL")
                     else:
-                        with st.spinner("Fetching content... This may take a moment for YouTube videos."):
-                            try:
-                                resp = requests.post(f"{API_URL}/ingest_url", json={"url": url_input}, headers=get_headers(), timeout=120)
-                                if resp.status_code == 200:
-                                    data = resp.json()
-                                    st.success(f"✅ YouTube transcript extracted successfully.")
-                                    time.sleep(1)
-                                    st.rerun()
-                                else:
-                                    error_detail = resp.json().get('detail', resp.text)
-                                    if "No captions found" in str(error_detail) or "captions disabled" in str(error_detail):
-                                        st.error("❌ No captions available for this video. YouTube may have captions disabled for this video. Try a video with the CC button visible, or upload a PDF instead.")
-                                    elif "quota exceeded" in str(error_detail).lower():
-                                        st.error("⚠️ YouTube API limit reached. Try again later or upload a PDF instead.")
-                                    elif "Could not access" in str(error_detail) or "private" in str(error_detail).lower():
-                                        st.error("❌ Could not access this video. It may be private, deleted, or region-restricted.")
-                                    elif "Could not extract video ID" in str(error_detail):
-                                        st.error("❌ Invalid YouTube URL format. Supported: youtube.com/watch?v=ID, youtu.be/ID, or youtube.com/shorts/ID")
-                                    elif "Invalid YouTube video ID" in str(error_detail):
-                                        st.error("❌ Invalid video ID. Please check the URL and try again.")
-                                    elif "too short" in str(error_detail):
-                                        st.error("⚠️ The video's transcript is too short or mostly music/sound effects. Try a video with more spoken content.")
+                        import re as re_mod
+                        is_youtube = "youtube.com" in url_input or "youtu.be" in url_input
+                        
+                        if is_youtube:
+                            # Extract video ID
+                            vid_match = re_mod.search(r'(?:v=|youtu\.be/|shorts/|embed/)([a-zA-Z0-9_-]{11})', url_input)
+                            if not vid_match:
+                                st.error("❌ Invalid YouTube URL format. Supported: youtube.com/watch?v=ID, youtu.be/ID, or youtube.com/shorts/ID")
+                            else:
+                                video_id = vid_match.group(1)
+                                st.session_state["yt_processing"] = video_id
+                                st.rerun()
+                        else:
+                            # Non-YouTube URL: use server-side ingestion
+                            with st.spinner("Fetching content..."):
+                                try:
+                                    resp = requests.post(f"{API_URL}/ingest_url", json={"url": url_input}, headers=get_headers(), timeout=120)
+                                    if resp.status_code == 200:
+                                        st.success(f"✅ {resp.json().get('message', 'Content added!')}")
+                                        time.sleep(1)
+                                        st.rerun()
                                     else:
+                                        error_detail = resp.json().get('detail', resp.text)
                                         st.error(f"Failed: {error_detail}")
-                            except requests.Timeout:
-                                st.error("⏱️ Request timed out. YouTube videos can take time - please try again.")
-                            except Exception as e:
-                                st.error(f"Error: {str(e)}")
+                                except requests.Timeout:
+                                    st.error("⏱️ Request timed out. Please try again.")
+                                except Exception as e:
+                                    st.error(f"Error: {str(e)}")
+                
+                # Browser-side YouTube transcript fetch
+                if st.session_state.get("yt_processing"):
+                    video_id = st.session_state["yt_processing"]
+                    st.info(f"⏳ Fetching transcript for video `{video_id}` from your browser...")
+                    
+                    # Load and inject the YouTube transcript component with video ID
+                    try:
+                        import os as os_mod
+                        html_path = os_mod.path.join(os_mod.path.dirname(__file__), "frontend", "youtube_transcript.html")
+                        with open(html_path) as f:
+                            yt_html = f.read()
+                        
+                        # Inject the video ID so the component auto-starts
+                        yt_html = yt_html.replace(
+                            '<body>',
+                            f'<body data-video-id="{video_id}">'
+                        )
+                        
+                        components.html(yt_html, height=40)
+                        
+                        # Auto-clear after a delay (user can click Process URL again if needed)
+                        if st.button("🔄 Done / Refresh Sources", use_container_width=True):
+                            st.session_state.pop("yt_processing", None)
+                            st.rerun()
+                    except FileNotFoundError:
+                        st.error("YouTube component not found. Please check frontend/youtube_transcript.html exists.")
+                        st.session_state.pop("yt_processing", None)
 
 # --- FOCUS MODE UI ---
 if st.session_state.focus_mode:

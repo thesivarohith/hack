@@ -115,6 +115,29 @@ def ingest_url_endpoint(request: UrlRequest, db: Session = Depends(get_db)):
         return {"message": f"Successfully added: {title}", "id": new_source.id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+class TextIngestionRequest(BaseModel):
+    text: str
+    source_name: str
+    source_type: str = "text"
+
+@app.post("/ingest_text")
+def ingest_text_endpoint(request: TextIngestionRequest, db: Session = Depends(get_db)):
+    """Ingest raw text content (e.g. browser-fetched YouTube transcripts)."""
+    try:
+        from backend.rag_engine import ingest_text
+        title = ingest_text(request.text, request.source_name, request.source_type)
+
+        # Save to DB
+        new_source = Source(filename=title, type=request.source_type, file_path=request.source_name, is_active=True)
+        db.add(new_source)
+        db.commit()
+        db.refresh(new_source)
+
+        return {"message": f"Successfully added: {title}", "id": new_source.id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/sources", response_model=List[SourceItem])
 def get_sources(db: Session = Depends(get_db)):
     sources = db.query(Source).filter(Source.is_active == True).all()

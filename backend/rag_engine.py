@@ -1,6 +1,5 @@
 import os
 import json
-import requests as http_requests
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
@@ -17,122 +16,6 @@ logger = logging.getLogger(__name__)
 CACHE_DIR = "./chroma_db"
 
 
-def _fetch_youtube_transcript(video_id: str) -> str:
-    """
-    Fetch YouTube transcript using the timedtext API endpoint.
-    Works from any server — no API keys or OAuth required.
-    Returns cleaned transcript text.
-    """
-    # Step 1: Fetch the YouTube page to get caption track info
-    page_url = f"https://www.youtube.com/watch?v={video_id}"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                       "AppleWebKit/537.36 (KHTML, like Gecko) "
-                       "Chrome/120.0.0.0 Safari/537.36",
-        "Accept-Language": "en-US,en;q=0.9"
-    }
-
-    response = http_requests.get(page_url, headers=headers, timeout=30)
-
-    if response.status_code != 200:
-        raise ValueError(
-            "Could not access this YouTube video. "
-            "It may be private or region-restricted."
-        )
-
-    # Step 2: Extract captionTracks from ytInitialPlayerResponse
-    match = re.search(r'"captionTracks":(\[.*?\])', response.text)
-
-    if not match:
-        raise ValueError(
-            "No captions available for this video. "
-            "The creator may have disabled captions. "
-            "Try a different video or upload a PDF instead."
-        )
-
-    try:
-        caption_tracks = json.loads(match.group(1))
-    except json.JSONDecodeError:
-        raise ValueError(
-            "Failed to parse caption data. "
-            "Try a different video or upload a PDF instead."
-        )
-
-    if not caption_tracks:
-        raise ValueError(
-            "No captions available for this video. "
-            "The creator may have disabled captions. "
-            "Try a different video or upload a PDF instead."
-        )
-
-    # Step 3: Pick best caption track by priority
-    selected = None
-
-    # Priority 1: Manual English captions
-    for track in caption_tracks:
-        lang = track.get('languageCode', '')
-        kind = track.get('kind', '')
-        if lang == 'en' and kind != 'asr':
-            selected = track
-            break
-
-    # Priority 2: Auto-generated English captions
-    if not selected:
-        for track in caption_tracks:
-            if track.get('languageCode', '') == 'en':
-                selected = track
-                break
-
-    # Priority 3: Any available track
-    if not selected:
-        selected = caption_tracks[0]
-
-    logger.info(f"Selected caption track: {selected.get('languageCode')} (kind={selected.get('kind', 'standard')})")
-
-    # Step 4: Download the caption track in JSON3 format
-    caption_url = selected.get('baseUrl')
-    if not caption_url:
-        raise ValueError("Could not retrieve caption URL.")
-
-    caption_response = http_requests.get(
-        caption_url + "&fmt=json3",
-        headers=headers,
-        timeout=30
-    )
-
-    if caption_response.status_code != 200:
-        raise ValueError("Failed to download captions.")
-
-    # Step 5: Parse the JSON3 caption format
-    try:
-        caption_data = caption_response.json()
-    except json.JSONDecodeError:
-        raise ValueError("Failed to parse caption data.")
-
-    events = caption_data.get('events', [])
-    text_parts = []
-
-    for event in events:
-        segs = event.get('segs', [])
-        for seg in segs:
-            utf8 = seg.get('utf8', '')
-            if utf8 and utf8 != '\n':
-                text_parts.append(utf8)
-
-    transcript_text = ' '.join(text_parts)
-
-    # Step 6: Clean the text
-    transcript_text = re.sub(r'\[.*?\]', '', transcript_text)
-    transcript_text = re.sub(r'\s+', ' ', transcript_text).strip()
-
-    if len(transcript_text) < 50:
-        raise ValueError(
-            "Transcript is too short or empty. "
-            "Try a different video with more spoken content."
-        )
-
-    logger.info(f"Timedtext API: extracted {len(transcript_text)} chars")
-    return transcript_text
 
 
 
@@ -222,55 +105,18 @@ def ingest_document(file_path: str):
 
 def ingest_url(url: str):
     """
-    Ingests content from a URL (YouTube or Web).
-    Uses YouTube's timedtext API for transcripts — no API keys needed.
+    Ingests content from a web page URL.
+    YouTube transcripts are now handled browser-side via frontend/youtube_transcript.html.
     """
     from langchain_community.document_loaders import WebBaseLoader
     
-    docs = []
-    title = url
-    
     try:
-        # Check if it's a YouTube URL (including shorts)
-        is_youtube = "youtube.com" in url or "youtu.be" in url
-        
-        if is_youtube:
-            logger.info(f"Processing YouTube URL: {url}")
-            
-            # Extract video ID using regex (supports watch, youtu.be, shorts, embed)
-            video_id_match = re.search(r'(?:v=|youtu\.be/|shorts/|embed/)([a-zA-Z0-9_-]{11})', url)
-            video_id = video_id_match.group(1) if video_id_match else None
-            
-            if not video_id:
-                raise ValueError(
-                    "Could not extract video ID from YouTube URL. "
-                    "Supported formats: youtube.com/watch?v=ID, youtu.be/ID, or youtube.com/shorts/ID"
-                )
-            
-            logger.info(f"Extracted video ID: {video_id}")
-            
-            # Fetch transcript using timedtext API
-            transcript_text = _fetch_youtube_transcript(video_id)
-            
-            # Create a document from the transcript
-            docs = [Document(
-                page_content=transcript_text,
-                metadata={
-                    "source": url,
-                    "title": f"YouTube: {video_id}",
-                    "type": "youtube"
-                }
-            )]
-            title = f"YouTube Video: {video_id}"
-            
-        else:
-            # Regular web page
-            logger.info(f"Processing web page: {url}")
-            loader = WebBaseLoader(url)
-            loader.requests_kwargs = {'timeout': 30}
-            docs = loader.load()
-            logger.info(f"Successfully loaded {len(docs)} documents")
-            title = docs[0].metadata.get("title", url) if docs else url
+        logger.info(f"Processing web page: {url}")
+        loader = WebBaseLoader(url)
+        loader.requests_kwargs = {'timeout': 30}
+        docs = loader.load()
+        logger.info(f"Successfully loaded {len(docs)} documents")
+        title = docs[0].metadata.get("title", url) if docs else url
             
         # Process and store documents
         splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
@@ -292,12 +138,48 @@ def ingest_url(url: str):
         return title
         
     except ValueError as e:
-        # User-friendly errors
         logger.error(f"Validation error: {e}")
         raise
     except Exception as e:
         logger.error(f"Error ingesting URL: {e}")
         raise ValueError(f"Failed to process URL: {str(e)}")
+
+def ingest_text(text: str, source_name: str, source_type: str = "text"):
+    """
+    Ingests raw text content into the vector database.
+    Used for browser-fetched YouTube transcripts and other text sources.
+    Reuses the same chunking/embedding pipeline as PDF ingestion.
+    """
+    if not text or len(text.strip()) < 50:
+        raise ValueError("Text content is too short or empty.")
+
+    # Create a document from the text
+    docs = [Document(
+        page_content=text,
+        metadata={
+            "source": source_name,
+            "type": source_type
+        }
+    )]
+
+    # Split text using the same chunking params as PDF ingestion
+    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    splits = splitter.split_documents(docs)
+
+    if not splits:
+        raise ValueError("No content found to ingest after splitting.")
+
+    logger.info(f"Split into {len(splits)} chunks, storing in ChromaDB")
+
+    # Store in ChromaDB
+    Chroma.from_documents(
+        documents=splits,
+        embedding=get_embeddings(),
+        persist_directory=CACHE_DIR
+    )
+
+    logger.info(f"Successfully ingested text: {source_name}")
+    return source_name
 
 def delete_document(source_path: str):
     """
