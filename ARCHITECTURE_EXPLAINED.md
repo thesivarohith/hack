@@ -1,4 +1,4 @@
-# FocusFlow Architecture - Explained Like You're in First Year
+# FocusFlow Architecture - Explained 
 
 **Imagine this:** You have a pile of PDF textbooks. You want to:
 1. Upload them to an app

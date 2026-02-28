@@ -29,10 +29,22 @@ def get_db():
         db.close()
 
 # Get student profile manager per session
-def get_profile_manager(x_student_id: Optional[str] = Header(None)) -> StudentProfileManager:
-    """Get profile manager with session-specific student ID"""
-    # Use provided student_id from header, or generate a temporary one
-    student_id = x_student_id if x_student_id else f"temp_{uuid.uuid4().hex[:12]}"
+def get_profile_manager(authorization: Optional[str] = Header(None)) -> StudentProfileManager:
+    """Get profile manager with session-specific student ID from Firebase token."""
+    from backend.config import is_firebase_configured
+
+    if is_firebase_configured():
+        # Cloud mode: require a valid Firebase token
+        if not authorization:
+            raise HTTPException(status_code=401, detail="Authorization header required")
+        token = authorization.replace("Bearer ", "", 1)
+        from backend.firebase_auth import verify_firebase_token
+        decoded = verify_firebase_token(token)
+        student_id = decoded["uid"]
+    else:
+        # Local mode fallback: no Firebase → use fixed local user
+        student_id = "local_user"
+
     return StudentProfileManager(student_id=student_id)
 
 # Pydantic Models

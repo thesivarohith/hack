@@ -410,7 +410,7 @@ Next plan generation uses mastery data for difficulty
 - **Query Response Time**: Seconds from question to answer
 - **Profile Save Latency**: Milliseconds for atomic write
 
-**Target**:
+**Target**:r
 - Plan gen: <10 seconds
 - Query response: <5 seconds
 - Save latency: <100ms
