@@ -138,6 +138,41 @@ def ingest_text_endpoint(request: TextIngestionRequest, db: Session = Depends(ge
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+class YouTubeIngestionRequest(BaseModel):
+    video_id: str
+
+@app.post("/ingest_youtube")
+def ingest_youtube(request: YouTubeIngestionRequest, db: Session = Depends(get_db)):
+    try:
+        from backend.rag_engine import get_youtube_transcript, ingest_text
+        # Fetch transcript using Invidious
+        transcript_text = get_youtube_transcript(request.video_id)
+
+        # Run through existing ingestion pipeline
+        source_name = f"YouTube: {request.video_id}"
+        title = ingest_text(
+            text=transcript_text,
+            source_name=source_name,
+            source_type="youtube"
+        )
+
+        # Save to DB
+        new_source = Source(filename=title, type="youtube", file_path=source_name, is_active=True)
+        db.add(new_source)
+        db.commit()
+        db.refresh(new_source)
+
+        return {"status": "success", "message": f"Successfully added: {title}", "source": source_name, "id": new_source.id}
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to process YouTube video: {str(e)}"
+        )
+
+
 @app.get("/sources", response_model=List[SourceItem])
 def get_sources(db: Session = Depends(get_db)):
     sources = db.query(Source).filter(Source.is_active == True).all()
