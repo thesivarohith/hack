@@ -1151,7 +1151,7 @@ if not st.session_state.focus_mode:
             youtube_enabled = st.session_state.get("app_config", {}).get("youtube_enabled", True)
 
             if youtube_enabled:
-                with st.expander("+ Add URL / YouTube"):
+                with st.expander("▶️ Add URL / YouTube"):
                     url_input = st.text_input("URL", placeholder="https://youtube.com/... or any webpage", label_visibility="collapsed")
                     if st.button("Process URL", use_container_width=True):
                         if not url_input:
@@ -1203,20 +1203,84 @@ if not st.session_state.focus_mode:
                                     except Exception as e:
                                         st.error(f"Error: {str(e)}")
             else:
-                with st.expander("▶️ Add YouTube Video"):
+                with st.expander("▶️ Add YouTube Video  —  Local Only"):
                     st.info(
-                        "⚠️ **YouTube is only available in local mode.**\n\n"
-                        "HuggingFace Spaces blocks outbound network requests "
-                        "which prevents YouTube transcript fetching.\n\n"
-                        "**Alternatives:**\n"
-                        "- 📄 Upload a PDF of your notes instead\n"
-                        "- 💻 Run FocusFlow locally to use YouTube\n"
-                        "- 📋 Paste text directly (coming soon)"
+                        "⚠️ **YouTube is not available in cloud mode.**\n\n"
+                        "HuggingFace Spaces blocks outbound network requests.\n\n"
+                        "**To use YouTube sources:**\n"
+                        "💻 Run FocusFlow locally with Ollama\n\n"
+                        "**Right now you can:**\n"
+                        "📄 Upload a PDF of your notes\n"
+                        "📋 Paste text directly below"
                     )
-                    st.markdown(
-                        "[▶️ How to run locally](https://github.com/thesivarohith/focusflow#local-setup)",
-                        unsafe_allow_html=False
+
+            # Paste Text Input
+            with st.expander("📋 Paste Text / Notes"):
+                paste_label = st.text_input(
+                    "Source name (optional)",
+                    placeholder="e.g. Chapter 3 Notes, Lecture Summary...",
+                    key="paste_label_input"
+                )
+
+                paste_text = st.text_area(
+                    "Paste your text here",
+                    placeholder=(
+                        "Paste any text here — lecture notes, "
+                        "article content, copied webpage text, "
+                        "study notes, anything you want to learn from..."
+                    ),
+                    height=200,
+                    key="paste_text_input"
+                )
+
+                word_count = len(paste_text.split()) if paste_text else 0
+                if paste_text:
+                    st.caption(f"📝 {word_count} words")
+
+                col1, col2 = st.columns([2, 1])
+                with col1:
+                    process_btn = st.button(
+                        "➕ Add as Source",
+                        key="process_paste_btn",
+                        disabled=len(paste_text.strip()) < 50,
+                        use_container_width=True
                     )
+                with col2:
+                    st.caption("Min 50 chars")
+
+                if process_btn and paste_text.strip():
+                    source_name = paste_label.strip() if paste_label.strip() \
+                        else f"Pasted Text ({word_count} words)"
+
+                    with st.spinner("Processing your text..."):
+                        try:
+                            # Use API_URL which is the global backend URL configured in app.py
+                            response = requests.post(
+                                f"{API_URL}/ingest_text",
+                                json={
+                                    "text": paste_text.strip(),
+                                    "source_name": source_name,
+                                    "source_type": "paste"
+                                },
+                                headers=get_headers()
+                            )
+                            if response.status_code == 200:
+                                st.success(f"✅ '{source_name}' added successfully!")
+                                # Remove keys from session_state instead of setting to "" due to Streamlit unchangeable key rules when bound to a widget
+                                if "paste_text_input" in st.session_state:
+                                    del st.session_state["paste_text_input"]
+                                if "paste_label_input" in st.session_state:
+                                    del st.session_state["paste_label_input"]
+                                time.sleep(1)
+                                st.rerun()
+                            else:
+                                error = response.json().get("detail", "Unknown error")
+                                st.error(f"❌ Failed to add text: {error}")
+                        except Exception as e:
+                            st.error(f"❌ Error: {str(e)}")
+
+                if len(paste_text.strip()) > 0 and len(paste_text.strip()) < 50:
+                    st.warning("⚠️ Please paste at least 50 characters.")
 
 # --- FOCUS MODE UI ---
 if st.session_state.focus_mode:
