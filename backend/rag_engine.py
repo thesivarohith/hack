@@ -26,6 +26,13 @@ INVIDIOUS_INSTANCES = [
 
 def get_youtube_transcript(video_id: str) -> str:
     """Fetch YouTube transcripts via the Invidious API to bypass network blocks."""
+    from backend.config import IS_CLOUD
+    if IS_CLOUD:
+        raise ValueError(
+            "YouTube is not available in cloud mode. "
+            "Please upload a PDF instead."
+        )
+
     # Step 1: Try each Invidious instance until one works
     captions_data = None
     last_error = None

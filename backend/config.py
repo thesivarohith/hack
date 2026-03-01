@@ -13,6 +13,11 @@ class LLMProvider(Enum):
 # Read from environment variable, default to Ollama (local)
 USE_PROVIDER = os.getenv("LLM_PROVIDER", "ollama").lower()
 
+# Set DEPLOYMENT_MODE=cloud in HuggingFace Spaces secrets
+# Leave unset or set to "local" for local development
+DEPLOYMENT_MODE = os.environ.get("DEPLOYMENT_MODE", "local").lower()
+IS_CLOUD = DEPLOYMENT_MODE == "cloud"
+
 # Configuration for both providers
 CONFIG = {
     "llm_provider": LLMProvider.OLLAMA if USE_PROVIDER == "ollama" else LLMProvider.HUGGINGFACE,

@@ -20,6 +20,15 @@ def health_check():
     """Health check endpoint"""
     return {"status": "healthy"}
 
+@app.get("/config")
+async def get_config():
+    from backend.config import IS_CLOUD, DEPLOYMENT_MODE
+    return {
+        "is_cloud": IS_CLOUD,
+        "deployment_mode": DEPLOYMENT_MODE,
+        "youtube_enabled": not IS_CLOUD
+    }
+
 # Dependency
 def get_db():
     db = SessionLocal()
