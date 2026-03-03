@@ -1,35 +1,25 @@
----
-title: FocusFlow
-emoji: 📚
-colorFrom: blue
-colorTo: purple
-sdk: docker
-app_port: 8501
-pinned: false
----
-
-# 📚 FocusFlow - AI Study Companion
+#  FocusFlow - AI Study Companion
 
 An intelligent study assistant powered by AI that transforms your learning materials into personalized, adaptive study experiences.
 
-## ✨ Features
+##  Features
 
-- **📖 Multi-Subject Study Planning**: Upload PDFs and get automated multi-day study plans
-- **💬 RAG-Powered Q&A**: Ask questions and get answers with source citations
-- **📝 Adaptive Quizzes**: Context-based quizzes that adapt to your performance
-- **📊 Progress Tracking**: Track mastery levels and quiz history
-- **🎯 Smart Day Progression**: Automatically unlocks new topics as you complete them
-- **🔍 Source Citations**: Every answer cites the exact source and page number
-- **☁️ Cloud Persistence**: Study plans and progress persist across sessions (cloud demo only)
-- **👥 Multi-User Support**: Each browser session maintains isolated data
+- ** Multi-Subject Study Planning**: Upload PDFs and get automated multi-day study plans
+- ** RAG-Powered Q&A**: Ask questions and get answers with source citations
+- ** Adaptive Quizzes**: Context-based quizzes that adapt to your performance
+- ** Progress Tracking**: Track mastery levels and quiz history
+- ** Smart Day Progression**: Automatically unlocks new topics as you complete them
+- ** Source Citations**: Every answer cites the exact source and page number
+- ** Cloud Persistence**: Study plans and progress persist across sessions (cloud demo only)
+- ** Multi-User Support**: Each browser session maintains isolated data
 
-## 🚀 Live Demo
+##  Live Demo
 
 **[Try FocusFlow on Hugging Face Spaces](https://huggingface.co/spaces/SivaRohith69/focusflow)**
 
 > **Note**: The cloud demo uses ephemeral containers. Your data persists in Supabase but each browser tab is treated as a separate user. For true persistent local storage, use the local deployment below.
 
-## 🤖 Models Used
+##  Models Used
 
 ### Cloud Demo (HF Spaces)
 - **LLM**: Meta-Llama-3-8B-Instruct (via Hugging Face Inference API)
@@ -39,7 +29,7 @@ An intelligent study assistant powered by AI that transforms your learning mater
 - **LLM**: llama3.2:1b (via Ollama - offline)
 - **Embeddings**: nomic-embed-text (offline)
 
-## 💻 Local Installation
+##  Local Installation
 
 ### Prerequisites
 - Python 3.10+
@@ -73,7 +63,7 @@ streamlit run app.py
 
 Visit `http://localhost:8501` to use the app!
 
-## 🎯 How to Use
+##  How to Use
 
 1. **Upload PDFs**: Add your study materials in the Sources panel
 2. **Generate Plan**: Ask the Calendar to create a study plan (e.g., "Make a 5-day plan")
@@ -81,7 +71,7 @@ Visit `http://localhost:8501` to use the app!
 4. **Take Quizzes**: Test your knowledge and unlock new topics
 5. **Track Progress**: View analytics and mastery levels
 
-## 🏗️ Architecture
+##  Architecture
 
 ```
 ┌─────────────────────────────────────────┐
@@ -102,7 +92,7 @@ Visit `http://localhost:8501` to use the app!
 └─────────┘ └───────┘ └───────────┘
 ```
 
-## 🛠️ Tech Stack
+##  Tech Stack
 
 - **Frontend**: Streamlit + Material Design
 - **Backend**: FastAPI + LangChain
@@ -110,18 +100,18 @@ Visit `http://localhost:8501` to use the app!
 - **LLM**: Ollama (local) / HuggingFace (cloud)
 - **Database**: Supabase PostgreSQL (cloud) / JSON files (local)
 
-## 🌥️ Cloud vs Local
+##  Cloud vs Local
 
 | Feature | Local | Cloud (HF Spaces) |
 |---------|-------|-------------------|
-| **Privacy** | ✅ Fully offline | ⚠️ Data in cloud |
-| **Cost** | ✅ Free | ✅ Free |
-| **Speed** | ⚠️ Depends on hardware | ✅ Fast |
-| **Persistence** | ✅ Local files | ✅ Supabase DB |
-| **Setup** | ⚠️ Requires Ollama | ✅ Just click |
-| **Multi-user** | ❌ Single user | ✅ Multi-user |
+| **Privacy** |  Fully offline |  Data in cloud |
+| **Cost** |  Free |  Free |
+| **Speed** |  Depends on hardware |  Fast |
+| **Persistence** |  Local files |  Supabase DB |
+| **Setup** |  Requires Ollama |  Just click |
+| **Multi-user** |  Single user |  Multi-user |
 
-## 📝 Configuration
+##  Configuration
 
 ### Environment Variables
 
@@ -138,28 +128,26 @@ LLM_PROVIDER=huggingface
 
 For local deployment, no configuration needed!
 
-## 🔒 Privacy
+##  Privacy
 
 - **Local Mode**: All data stays on your machine. No internet required.
 - **Cloud Mode**: Study plans stored in Supabase. PDFs processed in-memory, not stored.
 
-## 📄 License
+##  License
 
 MIT License - See [LICENSE](LICENSE) for details.
 
-## 🤝 Contributing
+##  Contributing
 
 Contributions welcome! Please feel free to submit a Pull Request.
 
-## 📧 Contact
+##  Contact
 
 For questions or feedback, open an issue on [GitHub](https://github.com/thesivarohith/hack/issues).
 
 ---
 
-**Built with ❤️ for better learning experiences**
+**Built with  for better learning experiences**
 
-🔗 **Links:**
+ **Links:**
 - [Live Demo](https://huggingface.co/spaces/SivaRohith69/focusflow)
-- [GitHub Repository](https://github.com/thesivarohith/hack)
-- [Documentation](https://github.com/thesivarohith/hack/blob/main/DEPLOYMENT.md)
