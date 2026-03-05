@@ -26,8 +26,8 @@ COPY . .
 # Create data directories
 RUN mkdir -p data chroma_db logs
 
-# Expose ports for backend (8000) and frontend (8501)
-EXPOSE 8501 8000
+# Expose ports for backend (8000) and frontend (7860 = HF Spaces default)
+EXPOSE 7860 8000
 
 # Set environment to use Hugging Face
 ENV LLM_PROVIDER=huggingface
@@ -76,25 +76,25 @@ RUN echo '#!/bin/bash\n\
     # Test critical imports before launching Streamlit\n\
     echo "Testing Python imports..." \n\
     python3 -c "\n\
-import sys\n\
-try:\n\
+    import sys\n\
+    try:\n\
     import streamlit; print(\"  ✅ streamlit\")\n\
-except Exception as e: print(f\"  ❌ streamlit: {e}\"); sys.exit(1)\n\
-try:\n\
+    except Exception as e: print(f\"  ❌ streamlit: {e}\"); sys.exit(1)\n\
+    try:\n\
     import requests; print(\"  ✅ requests\")\n\
-except Exception as e: print(f\"  ❌ requests: {e}\")\n\
-try:\n\
+    except Exception as e: print(f\"  ❌ requests: {e}\")\n\
+    try:\n\
     from streamlit_calendar import calendar; print(\"  ✅ streamlit_calendar\")\n\
-except Exception as e: print(f\"  ❌ streamlit_calendar: {e}\")\n\
-try:\n\
+    except Exception as e: print(f\"  ❌ streamlit_calendar: {e}\")\n\
+    try:\n\
     import firebase_admin; print(\"  ✅ firebase_admin\")\n\
-except Exception as e: print(f\"  ❌ firebase_admin: {e}\")\n\
-print(\"Import check complete.\")\n\
+    except Exception as e: print(f\"  ❌ firebase_admin: {e}\")\n\
+    print(\"Import check complete.\")\n\
     "\n\
     \n\
     # Start Streamlit frontend\n\
-    echo "Starting frontend on port 8501..." \n\
-    exec streamlit run app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true 2>&1\n\
+    echo "Starting frontend on port 7860..." \n\
+    exec streamlit run app.py --server.port 7860 --server.address 0.0.0.0 --server.headless true 2>&1\n\
     ' > /app/start.sh && chmod +x /app/start.sh
 
 # Run startup script
