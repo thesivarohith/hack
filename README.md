@@ -1,3 +1,13 @@
+---
+title: FocusFlow
+emoji: 🎯
+colorFrom: purple
+colorTo: indigo
+sdk: docker
+app_file: app.py
+pinned: false
+---
+
 #  FocusFlow - AI Study Companion
 
 An intelligent study assistant powered by AI that transforms your learning materials into personalized, adaptive study experiences.
