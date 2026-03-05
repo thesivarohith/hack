@@ -392,7 +392,7 @@ def show_login_page():
             # Google button
             g_url = get_google_oauth_url(APP_URL)
             st.markdown(
-                f"""<a href="{g_url}" target="_self"
+                f"""<a href="{g_url}" target="_top"
                 style="text-decoration:none">
                 <div style="background:white;color:#333;
                 border:1px solid #ddd;border-radius:8px;
@@ -411,7 +411,7 @@ def show_login_page():
             # GitHub button
             gh_url = get_github_oauth_url(APP_URL)
             st.markdown(
-                f"""<a href="{gh_url}" target="_self"
+                f"""<a href="{gh_url}" target="_top"
                 style="text-decoration:none">
                 <div style="background:#24292e;color:white;
                 border-radius:8px;padding:12px;
