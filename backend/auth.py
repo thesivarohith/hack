@@ -141,7 +141,8 @@ def google_callback(code: str, app_url: str) -> dict:
     )
     fb_data = fb_r.json()
     if "idToken" not in fb_data:
-        raise ValueError("Firebase Google sign-in failed")
+        err_msg = fb_data.get("error", {}).get("message", "Unknown Firebase error")
+        raise ValueError(f"Firebase Google sign-in failed: {err_msg}")
     return {
         "uid": fb_data["localId"],
         "email": fb_data.get("email", ""),
