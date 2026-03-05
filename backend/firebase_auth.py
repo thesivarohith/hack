@@ -35,7 +35,7 @@ def _init_firebase():
         logger.info("✅ Firebase Admin SDK initialized successfully.")
     except Exception as e:
         logger.error(f"❌ Failed to initialize Firebase Admin SDK: {e}")
-        raise
+        # Don't raise — allow app to start without Firebase auth
 
 # Run initialization at module load time
 _init_firebase()

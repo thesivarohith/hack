@@ -43,6 +43,7 @@ ENV USE_SUPABASE=true
 RUN echo '#!/bin/bash\n\
     set -e\n\
     \n\
+    echo "===== Application Startup at $(date) =====" \n\
     echo "=== FocusFlow Startup ===" \n\
     \n\
     # Wait for DNS/networking to be ready (HF Spaces can be slow)\n\
@@ -72,9 +73,28 @@ RUN echo '#!/bin/bash\n\
     sleep 1\n\
     done\n\
     \n\
+    # Test critical imports before launching Streamlit\n\
+    echo "Testing Python imports..." \n\
+    python3 -c "\n\
+import sys\n\
+try:\n\
+    import streamlit; print(\"  ✅ streamlit\")\n\
+except Exception as e: print(f\"  ❌ streamlit: {e}\"); sys.exit(1)\n\
+try:\n\
+    import requests; print(\"  ✅ requests\")\n\
+except Exception as e: print(f\"  ❌ requests: {e}\")\n\
+try:\n\
+    from streamlit_calendar import calendar; print(\"  ✅ streamlit_calendar\")\n\
+except Exception as e: print(f\"  ❌ streamlit_calendar: {e}\")\n\
+try:\n\
+    import firebase_admin; print(\"  ✅ firebase_admin\")\n\
+except Exception as e: print(f\"  ❌ firebase_admin: {e}\")\n\
+print(\"Import check complete.\")\n\
+    "\n\
+    \n\
     # Start Streamlit frontend\n\
     echo "Starting frontend on port 8501..." \n\
-    exec streamlit run app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true\n\
+    exec streamlit run app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true 2>&1\n\
     ' > /app/start.sh && chmod +x /app/start.sh
 
 # Run startup script

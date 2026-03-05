@@ -4,7 +4,12 @@ import pandas as pd
 import plotly.express as px
 import time
 import streamlit.components.v1 as components
-from streamlit_calendar import calendar
+try:
+    from streamlit_calendar import calendar as st_calendar
+    _HAS_CALENDAR = True
+except ImportError:
+    _HAS_CALENDAR = False
+    st_calendar = None
 from datetime import date
 import os
 
