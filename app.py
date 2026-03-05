@@ -313,142 +313,299 @@ API_URL = "http://localhost:8000"
 # ========== FIREBASE AUTH CONFIG ==========
 FIREBASE_API_KEY = os.getenv("FIREBASE_API_KEY", "")
 FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID", "")
-FIREBASE_AUTH_ENABLED = bool(FIREBASE_API_KEY and FIREBASE_PROJECT_ID)
+FIREBASE_AUTH_ENABLED = bool(FIREBASE_API_KEY)
+FIREBASE_AUTH_URL = "https://identitytoolkit.googleapis.com/v1/accounts"
 
-# ========== LANDING PAGE / LOGIN SCREEN ==========
-_is_authenticated = "firebase_token" in st.session_state or "local_bypass" in st.session_state
+# ========== OAUTH CONFIG ==========
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
+GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID", "")
+GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "")
+APP_URL = os.getenv("APP_URL", "http://localhost:8501").rstrip("/")
 
-if not _is_authenticated:
-    # Check if token was passed back from the login component
+# ========== AUTH HELPER FUNCTIONS ==========
+
+def save_session(id_token: str, uid: str, email: str, name: str, avatar: str):
+    """Store auth result in session state."""
+    st.session_state["firebase_token"] = id_token
+    st.session_state["user_info"] = {
+        "uid": uid,
+        "email": email,
+        "displayName": name or email.split("@")[0],
+        "photoURL": avatar,
+    }
+
+def handle_email_login(email: str, password: str):
+    if not email or not password:
+        st.error("Please enter email and password.")
+        return
+    try:
+        resp = requests.post(
+            f"{FIREBASE_AUTH_URL}:signInWithPassword?key={FIREBASE_API_KEY}",
+            json={"email": email, "password": password, "returnSecureToken": True},
+            timeout=10
+        )
+        data = resp.json()
+        if "idToken" in data:
+            save_session(data["idToken"], data["localId"], email,
+                         data.get("displayName", email.split("@")[0]), "")
+            st.rerun()
+        else:
+            msg = data.get("error", {}).get("message", "Login failed")
+            if "INVALID_PASSWORD" in msg or "EMAIL_NOT_FOUND" in msg or "INVALID_LOGIN_CREDENTIALS" in msg:
+                st.error("❌ Invalid email or password.")
+            elif "TOO_MANY_ATTEMPTS" in msg:
+                st.error("❌ Too many failed attempts. Try again later.")
+            else:
+                st.error(f"❌ {msg}")
+    except Exception as e:
+        st.error(f"❌ Login failed: {e}")
+
+def handle_email_signup(name: str, email: str, password: str):
+    if not name or not email or not password:
+        st.error("Please fill in all fields.")
+        return
+    if len(password) < 6:
+        st.error("Password must be at least 6 characters.")
+        return
+    try:
+        resp = requests.post(
+            f"{FIREBASE_AUTH_URL}:signUp?key={FIREBASE_API_KEY}",
+            json={"email": email, "password": password, "returnSecureToken": True},
+            timeout=10
+        )
+        data = resp.json()
+        if "idToken" in data:
+            # Update display name
+            requests.post(
+                f"{FIREBASE_AUTH_URL}:update?key={FIREBASE_API_KEY}",
+                json={"idToken": data["idToken"], "displayName": name, "returnSecureToken": False},
+                timeout=10
+            )
+            save_session(data["idToken"], data["localId"], email, name, "")
+            st.success("✅ Account created! Welcome to FocusFlow!")
+            st.rerun()
+        else:
+            msg = data.get("error", {}).get("message", "Signup failed")
+            if "EMAIL_EXISTS" in msg:
+                st.error("❌ Email already registered. Try logging in.")
+            elif "WEAK_PASSWORD" in msg:
+                st.error("❌ Password too weak. Use at least 6 characters.")
+            else:
+                st.error(f"❌ {msg}")
+    except Exception as e:
+        st.error(f"❌ Signup failed: {e}")
+
+def handle_forgot_password(email: str):
+    if not email:
+        st.error("Enter your email address first.")
+        return
+    try:
+        resp = requests.post(
+            f"{FIREBASE_AUTH_URL}:sendOobCode?key={FIREBASE_API_KEY}",
+            json={"requestType": "PASSWORD_RESET", "email": email},
+            timeout=10
+        )
+        data = resp.json()
+        if "email" in data:
+            st.success("✅ Password reset email sent! Check your inbox.")
+        else:
+            st.error("❌ Could not send reset email. Check your address.")
+    except Exception as e:
+        st.error(f"❌ Error: {e}")
+
+def get_google_auth_url() -> str:
+    if not GOOGLE_CLIENT_ID:
+        return ""
+    params = (f"client_id={GOOGLE_CLIENT_ID}"
+              f"&redirect_uri={APP_URL}"
+              f"&response_type=code"
+              f"&scope=openid+email+profile"
+              f"&state=google_oauth"
+              f"&access_type=offline&prompt=select_account")
+    return f"https://accounts.google.com/o/oauth2/v2/auth?{params}"
+
+def handle_google_callback(code: str):
+    try:
+        token_resp = requests.post(
+            "https://oauth2.googleapis.com/token",
+            data={"code": code, "client_id": GOOGLE_CLIENT_ID,
+                  "client_secret": GOOGLE_CLIENT_SECRET,
+                  "redirect_uri": APP_URL, "grant_type": "authorization_code"},
+            timeout=10
+        )
+        tokens = token_resp.json()
+        id_token_google = tokens.get("id_token")
+        if not id_token_google:
+            st.error("❌ Google login failed. Please try again.")
+            return
+        firebase_resp = requests.post(
+            f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key={FIREBASE_API_KEY}",
+            json={"postBody": f"id_token={id_token_google}&providerId=google.com",
+                  "requestUri": APP_URL, "returnIdpCredential": True, "returnSecureToken": True},
+            timeout=10
+        )
+        fdata = firebase_resp.json()
+        if "idToken" in fdata:
+            save_session(fdata["idToken"], fdata["localId"],
+                         fdata.get("email", ""), fdata.get("displayName", "Student"),
+                         fdata.get("photoUrl", ""))
+            st.query_params.clear()
+            st.rerun()
+        else:
+            st.error("❌ Firebase authentication failed.")
+    except Exception as e:
+        st.error(f"❌ Google login error: {e}")
+
+def get_github_auth_url() -> str:
+    if not GITHUB_CLIENT_ID:
+        return ""
+    params = (f"client_id={GITHUB_CLIENT_ID}"
+              f"&redirect_uri={APP_URL}"
+              f"&scope=user:email"
+              f"&state=github_oauth")
+    return f"https://github.com/login/oauth/authorize?{params}"
+
+def handle_github_callback(code: str):
+    try:
+        token_resp = requests.post(
+            "https://github.com/login/oauth/access_token",
+            headers={"Accept": "application/json"},
+            data={"client_id": GITHUB_CLIENT_ID, "client_secret": GITHUB_CLIENT_SECRET,
+                  "code": code, "redirect_uri": APP_URL},
+            timeout=10
+        )
+        token_data = token_resp.json()
+        access_token = token_data.get("access_token")
+        if not access_token:
+            st.error("❌ GitHub login failed. Please try again.")
+            return
+        # Get email
+        user_resp = requests.get("https://api.github.com/user",
+                                  headers={"Authorization": f"token {access_token}"}, timeout=10)
+        github_user = user_resp.json()
+        if not github_user.get("email"):
+            email_resp = requests.get("https://api.github.com/user/emails",
+                                       headers={"Authorization": f"token {access_token}"}, timeout=10)
+            emails = email_resp.json()
+            if isinstance(emails, list):
+                primary = next((e["email"] for e in emails if e.get("primary")), None)
+                github_user["email"] = primary
+        firebase_resp = requests.post(
+            f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key={FIREBASE_API_KEY}",
+            json={"postBody": f"access_token={access_token}&providerId=github.com",
+                  "requestUri": APP_URL, "returnIdpCredential": True, "returnSecureToken": True},
+            timeout=10
+        )
+        fdata = firebase_resp.json()
+        if "idToken" in fdata:
+            save_session(fdata["idToken"], fdata["localId"],
+                         fdata.get("email", github_user.get("email", "")),
+                         fdata.get("displayName", github_user.get("name", "Student")),
+                         fdata.get("photoUrl", github_user.get("avatar_url", "")))
+            st.query_params.clear()
+            st.rerun()
+        else:
+            st.error("❌ Firebase authentication failed.")
+    except Exception as e:
+        st.error(f"❌ GitHub login error: {e}")
+
+def check_oauth_callback() -> bool:
+    """Check for OAuth redirect callbacks in URL params. Returns True if handled."""
     params = st.query_params
-    if "fb_token" in params and "fb_uid" in params:
-        st.session_state["firebase_token"] = params["fb_token"]
-        st.session_state["user_info"] = {
-            "uid": params.get("fb_uid", ""),
-            "email": params.get("fb_email", ""),
-            "displayName": params.get("fb_name", "User"),
-            "photoURL": params.get("fb_photo", ""),
-        }
-        # Clear query params after reading
-        st.query_params.clear()
-        st.rerun()
-    else:
-        # Show login screen
+    code = params.get("code", "")
+    state = params.get("state", "")
+    if code and state == "google_oauth":
+        with st.spinner("Completing Google sign-in..."):
+            handle_google_callback(code)
+        return True
+    if code and state == "github_oauth":
+        with st.spinner("Completing GitHub sign-in..."):
+            handle_github_callback(code)
+        return True
+    return False
+
+def show_login_page():
+    """Render the full login page."""
+    # Handle OAuth redirect callback first
+    if check_oauth_callback():
+        return
+
+    col1, col2, col3 = st.columns([1, 1.4, 1])
+    with col2:
         st.markdown("""
-        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center;
-                    min-height: 80vh; text-align: center;">
-            <div style="font-size: 3rem; margin-bottom: 0.25rem;">🎯</div>
-            <h1 style="font-size: 2.5rem; font-weight: 700; margin-bottom: 0.5rem;">FocusFlow</h1>
-            <p style="color: #6B7280; font-size: 1.1rem; margin-bottom: 2rem;">AI-Powered Study Companion</p>
-        </div>
+            <div style='text-align:center;padding:40px 0 20px'>
+                <div style='font-size:3.5rem'>🎯</div>
+                <h1 style='color:#7C3AED;margin:4px 0 0'>FocusFlow</h1>
+                <p style='color:#94A3B8;margin:4px 0 0;font-size:1.05rem'>AI-Powered Study Companion</p>
+            </div>
         """, unsafe_allow_html=True)
 
-        # ---- Native Streamlit Login Form (works in HuggingFace + everywhere) ----
-        if "show_login_ui" not in st.session_state:
-            st.session_state.show_login_ui = False
-        if "auth_mode" not in st.session_state:
-            st.session_state.auth_mode = "login"  # "login" or "signup"
+        if FIREBASE_AUTH_ENABLED:
+            google_url = get_google_auth_url()
+            github_url = get_github_auth_url()
 
-        if not st.session_state.show_login_ui:
-            col_l, col_mid, col_r = st.columns([2, 1, 2])
-            with col_mid:
-                if st.button("🔐 Log In / Sign Up", type="primary", use_container_width=True):
-                    st.session_state.show_login_ui = True
-                    st.rerun()
-                if not FIREBASE_AUTH_ENABLED:
-                    st.markdown("<br>", unsafe_allow_html=True)
-                    if st.button("▶ Continue without login", use_container_width=True):
-                        st.session_state["local_bypass"] = True
-                        st.rerun()
+            if google_url:
+                st.markdown(
+                    f"<a href='{google_url}' target='_self' style='text-decoration:none'>"
+                    f"<button style='width:100%;padding:11px;margin:4px 0;background:white;"
+                    f"color:#3c4043;border:1px solid #dadce0;border-radius:8px;font-size:15px;"
+                    f"font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px'>"
+                    f"<svg width='18' height='18' viewBox='0 0 48 48'>"
+                    f"<path fill='#EA4335' d='M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z'/>"
+                    f"<path fill='#4285F4' d='M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z'/>"
+                    f"<path fill='#FBBC05' d='M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z'/>"
+                    f"<path fill='#34A853' d='M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z'/></svg>"
+                    f"Continue with Google</button></a>",
+                    unsafe_allow_html=True
+                )
+
+            if github_url:
+                st.markdown(
+                    f"<a href='{github_url}' target='_self' style='text-decoration:none'>"
+                    f"<button style='width:100%;padding:11px;margin:4px 0;background:#24292e;"
+                    f"color:white;border:none;border-radius:8px;font-size:15px;font-weight:500;cursor:pointer'>"
+                    f"⚫ Continue with GitHub</button></a>",
+                    unsafe_allow_html=True
+                )
+
+            st.markdown("<p style='text-align:center;color:#94A3B8;margin:14px 0 8px'>— or —</p>",
+                        unsafe_allow_html=True)
+
+            tab_login, tab_signup = st.tabs(["🔑 Login", "✨ Sign Up"])
+
+            with tab_login:
+                login_email = st.text_input("Email", key="login_email", placeholder="you@example.com")
+                login_pass = st.text_input("Password", key="login_password", type="password", placeholder="••••••••")
+                col_a, col_b = st.columns([3, 2])
+                with col_a:
+                    if st.button("Login", use_container_width=True, type="primary", key="email_login_btn"):
+                        handle_email_login(login_email, login_pass)
+                with col_b:
+                    if st.button("Forgot password?", key="forgot_btn", use_container_width=True):
+                        handle_forgot_password(login_email)
+
+            with tab_signup:
+                signup_name = st.text_input("Full Name", key="signup_name", placeholder="Your Name")
+                signup_email = st.text_input("Email", key="signup_email", placeholder="you@example.com")
+                signup_pass = st.text_input("Password", key="signup_pass", type="password", placeholder="Min 6 characters")
+                if st.button("Create Account", use_container_width=True, type="primary", key="signup_btn"):
+                    handle_email_signup(signup_name, signup_email, signup_pass)
         else:
-            col_l, col_mid, col_r = st.columns([1.5, 2, 1.5])
-            with col_mid:
-                # Toggle between Login and Sign Up
-                tab_login, tab_signup = st.tabs(["🔑 Log In", "📝 Sign Up"])
+            # Local mode — no Firebase keys
+            st.info("ℹ️ Firebase not configured. Running in local mode.")
+            if st.button("▶ Continue without login", type="primary", use_container_width=True):
+                st.session_state["local_bypass"] = True
+                st.rerun()
 
-                def _firebase_email_auth(email, password, is_signup=False):
-                    """Call Firebase REST API for email/password auth."""
-                    endpoint = "signUp" if is_signup else "signInWithPassword"
-                    url = f"https://identitytoolkit.googleapis.com/v1/accounts:{endpoint}?key={FIREBASE_API_KEY}"
-                    resp = requests.post(url, json={"email": email, "password": password, "returnSecureToken": True}, timeout=10)
-                    return resp.json()
+        st.markdown("<p style='text-align:center;color:#64748B;padding-top:20px;font-size:13px'>"
+                    "Made for students, by students ❤️</p>", unsafe_allow_html=True)
 
-                with tab_login:
-                    with st.form("login_form"):
-                        email = st.text_input("📧 Email", placeholder="you@example.com")
-                        password = st.text_input("🔒 Password", type="password", placeholder="Your password")
-                        submitted = st.form_submit_button("Log In", type="primary", use_container_width=True)
-                        if submitted:
-                            if not email or not password:
-                                st.error("Please enter your email and password.")
-                            elif not FIREBASE_AUTH_ENABLED:
-                                st.error("Firebase not configured. Use 'Continue without login' instead.")
-                            else:
-                                try:
-                                    result = _firebase_email_auth(email, password)
-                                    if "idToken" in result:
-                                        st.session_state["firebase_token"] = result["idToken"]
-                                        st.session_state["user_info"] = {
-                                            "uid": result.get("localId", ""),
-                                            "email": result.get("email", ""),
-                                            "displayName": result.get("displayName", email.split("@")[0]),
-                                            "photoURL": result.get("photoURL", ""),
-                                        }
-                                        st.success("✅ Logged in!")
-                                        st.rerun()
-                                    else:
-                                        err = result.get("error", {}).get("message", "Login failed")
-                                        st.error(f"❌ {err.replace('_', ' ').title()}")
-                                except Exception as e:
-                                    st.error(f"Connection error: {e}")
-
-                    if FIREBASE_AUTH_ENABLED:
-                        st.markdown("---")
-                        st.markdown("**Or sign in with:**")
-                        google_auth_url = f"https://{FIREBASE_PROJECT_ID}.firebaseapp.com/__/auth/handler"
-                        st.markdown(
-                            f'<a href="https://accounts.google.com/o/oauth2/auth?client_id=272558417680-web&redirect_uri=https://{FIREBASE_PROJECT_ID}.firebaseapp.com/__/auth/handler&response_type=code&scope=email+profile" target="_blank">'
-                            f'<button style="width:100%;padding:10px;border:1px solid #dadce0;border-radius:8px;background:white;cursor:pointer;font-size:15px;font-weight:500;color:#3c4043;margin-bottom:8px;">'
-                            f'<svg style="vertical-align:middle;margin-right:8px" width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>'
-                            f'Sign in with Google</button></a>',
-                            unsafe_allow_html=True
-                        )
-
-                with tab_signup:
-                    with st.form("signup_form"):
-                        new_email = st.text_input("📧 Email", placeholder="you@example.com", key="signup_email")
-                        new_password = st.text_input("🔒 Password", type="password", placeholder="At least 6 characters", key="signup_pass")
-                        confirm_password = st.text_input("🔒 Confirm Password", type="password", placeholder="Repeat password", key="confirm_pass")
-                        signup_submitted = st.form_submit_button("Create Account", type="primary", use_container_width=True)
-                        if signup_submitted:
-                            if not new_email or not new_password:
-                                st.error("Please fill in all fields.")
-                            elif new_password != confirm_password:
-                                st.error("Passwords do not match.")
-                            elif len(new_password) < 6:
-                                st.error("Password must be at least 6 characters.")
-                            elif not FIREBASE_AUTH_ENABLED:
-                                st.error("Firebase not configured.")
-                            else:
-                                try:
-                                    result = _firebase_email_auth(new_email, new_password, is_signup=True)
-                                    if "idToken" in result:
-                                        st.session_state["firebase_token"] = result["idToken"]
-                                        st.session_state["user_info"] = {
-                                            "uid": result.get("localId", ""),
-                                            "email": result.get("email", ""),
-                                            "displayName": new_email.split("@")[0],
-                                            "photoURL": "",
-                                        }
-                                        st.success("✅ Account created! Welcome to FocusFlow!")
-                                        st.rerun()
-                                    else:
-                                        err = result.get("error", {}).get("message", "Sign up failed")
-                                        st.error(f"❌ {err.replace('_', ' ').title()}")
-                                except Exception as e:
-                                    st.error(f"Connection error: {e}")
-
-        st.stop()  # Don't render the rest of the app
+# ========== AUTH GATE ==========
+_is_authenticated = "firebase_token" in st.session_state or "local_bypass" in st.session_state
+if not _is_authenticated:
+    show_login_page()
+    st.stop()
 
 # Session State
 if "timer_running" not in st.session_state: st.session_state.timer_running = False

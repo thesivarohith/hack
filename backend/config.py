@@ -108,6 +108,13 @@ FIREBASE_SERVICE_ACCOUNT_JSON = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON", "")
 FIREBASE_API_KEY = os.getenv("FIREBASE_API_KEY", "")
 FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID", "")
 
+# ========== OAUTH CONFIG ==========
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
+GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID", "")
+GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "")
+APP_URL = os.getenv("APP_URL", "http://localhost:8501")
+
 def is_firebase_configured():
     """Check if Firebase credentials are available (cloud mode with auth)"""
     return bool(FIREBASE_SERVICE_ACCOUNT_JSON)
