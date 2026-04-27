@@ -162,9 +162,9 @@ For questions or feedback, open an issue on [GitHub](https://github.com/thesivar
  **Links:**
 - [Live Demo](https://huggingface.co/spaces/SivaRohith69/focusflow)
 
-## 🚀 Latest Updates
-- ✅ Firebase Authentication (Google, GitHub, Email/Password)
-- ✅ OCR support for scanned PDFs
-- ✅ Paste Text feature for cloud mode
-- ✅ Student data stored in Supabase per user
-- ✅ Deployed on HuggingFace Spaces
+##  Latest Updates
+-  Firebase Authentication (Google, GitHub, Email/Password)
+-  OCR support for scanned PDFs
+-  Paste Text feature for cloud mode
+-  Student data stored in Supabase per user
+-  Deployed on HuggingFace Spaces
